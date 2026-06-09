@@ -94,6 +94,10 @@ sudo /opt/smartcam-agent/venv/bin/python -m smartcam_agent.agent run
 | `SMARTCAM_MOTION_FPS` | `4` | FPS de análisis de movimiento |
 | `SMARTCAM_MOTION_AREA` | `1500` | Píxeles mínimos para evento de movimiento |
 | `SMARTCAM_MOTION_COOLDOWN` | `30` | Segundos entre eventos consecutivos por cámara |
+| `SMARTCAM_CAM_WIDTH` | `640` | Ancho de captura (px) |
+| `SMARTCAM_CAM_HEIGHT` | `480` | Alto de captura (px) |
+| `SMARTCAM_CAM_FPS` | `15` | FPS de captura |
+| `SMARTCAM_CAM_FOURCC` | `MJPG` | Formato de pixel (`MJPG` o `YUYV`) |
 
 ## Re-emparejar / cambiar de cuenta
 

@@ -24,6 +24,13 @@ MOTION_AREA_THRESHOLD = int(os.environ.get("SMARTCAM_MOTION_AREA", "1500"))  # p
 MOTION_COOLDOWN_SEC = int(os.environ.get("SMARTCAM_MOTION_COOLDOWN", "30"))
 THUMB_MAX_WIDTH = 480
 
+# Camera capture defaults (override via env vars). MJPG @ 640x480 is a great
+# default for Raspberry Pi 3B+: low CPU, compressed pixel format, plenty of fps.
+CAM_WIDTH = int(os.environ.get("SMARTCAM_CAM_WIDTH", "640"))
+CAM_HEIGHT = int(os.environ.get("SMARTCAM_CAM_HEIGHT", "480"))
+CAM_FPS = int(os.environ.get("SMARTCAM_CAM_FPS", "15"))
+CAM_FOURCC = os.environ.get("SMARTCAM_CAM_FOURCC", "MJPG")
+
 
 # ---------------- USB camera scan ----------------
 def scan_usb_cameras() -> List[Dict[str, Any]]:
@@ -87,6 +94,21 @@ def _worker(api_url: str, api_key: str, cam: Dict[str, Any], stop_event: threadi
     if not cap.isOpened():
         print(f"[agent][cam:{name}] cannot open /dev/video{usb_idx}", file=sys.stderr)
         return
+
+    # Configure capture for low CPU usage (critical on Pi 3B+).
+    # Order matters on some cameras: set FOURCC first, then resolution, then FPS.
+    try:
+        if len(CAM_FOURCC) == 4:
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*CAM_FOURCC))
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAM_WIDTH)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAM_HEIGHT)
+        cap.set(cv2.CAP_PROP_FPS, CAM_FPS)
+        actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+        actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+        actual_fps = cap.get(cv2.CAP_PROP_FPS) or 0
+        print(f"[agent][cam:{name}] capture configured: {actual_w}x{actual_h} @ {actual_fps:.0f}fps fourcc={CAM_FOURCC}")
+    except Exception as e:
+        print(f"[agent][cam:{name}] could not configure capture: {e}", file=sys.stderr)
 
     last_thumb_at = 0.0
     last_event_at = 0.0
