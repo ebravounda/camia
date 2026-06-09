@@ -1,0 +1,119 @@
+{
+  "theme": "dark",
+  "archetype": "4 (Swiss & High-Contrast - Dark Mode Enterprise SaaS)",
+  "design_philosophy": "A professional, enterprise-grade Dark Mode interface inspired by Vercel and Linear. It utilizes deep navy/charcoal tones combined with sharp electric blue accents to create a command-center feel. The design relies on 1px subtle borders, precise typography, and functional layouts (like the 2x2 camera grid and lateral event timeline) to project reliability, security, and advanced AI capability without overwhelming the user.",
+  "colors": {
+    "background": {
+      "default": "#090A0F",
+      "paper": "#12141D",
+      "sidebar": "#0E1017"
+    },
+    "primary": {
+      "default": "#3B82F6",
+      "hover": "#2563EB",
+      "glow": "rgba(59, 130, 246, 0.5)"
+    },
+    "text": {
+      "primary": "#F9FAFB",
+      "secondary": "#9CA3AF",
+      "muted": "#6B7280"
+    },
+    "border": {
+      "subtle": "rgba(255, 255, 255, 0.08)",
+      "strong": "rgba(255, 255, 255, 0.15)",
+      "focus": "rgba(59, 130, 246, 0.6)"
+    },
+    "status": {
+      "success": "#10B981",
+      "warning": "#F59E0B",
+      "danger": "#EF4444",
+      "live": "#FF3B30"
+    }
+  },
+  "typography": {
+    "font_families": {
+      "heading": "Outfit, sans-serif",
+      "body": "Manrope, sans-serif",
+      "mono": "JetBrains Mono, monospace"
+    },
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl tracking-tight font-bold",
+      "h2": "text-2xl sm:text-3xl tracking-tight font-semibold",
+      "h3": "text-xl sm:text-2xl font-medium",
+      "h4": "text-lg font-medium",
+      "body": "text-sm sm:text-base leading-relaxed",
+      "small": "text-xs tracking-wider uppercase font-semibold text-muted"
+    }
+  },
+  "layout_and_spacing": {
+    "container_padding": "p-6 sm:p-8 lg:p-12",
+    "bento_grid": "grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6",
+    "camera_grid": "grid grid-cols-1 sm:grid-cols-2 gap-4 auto-rows-[minmax(250px,_1fr)]",
+    "border_radius": {
+      "card": "rounded-xl",
+      "button": "rounded-md",
+      "badge": "rounded-full"
+    },
+    "sidebar": "w-64 border-r border-white/10 bg-[#0E1017]"
+  },
+  "surfaces_and_micro_themes": {
+    "dashboard_card": "bg-[#12141D] border border-white/10 rounded-xl overflow-hidden relative shadow-sm",
+    "glass_header": "backdrop-blur-xl bg-[#090A0F]/70 border-b border-white/10 sticky top-0 z-50",
+    "live_feed_container": "bg-black border border-white/10 rounded-lg overflow-hidden relative group",
+    "tracing_beam_pricing": "relative overflow-hidden rounded-xl bg-[#12141D] border border-white/10 hover:border-blue-500/50 transition-colors duration-300 shadow-[0_0_15px_rgba(59,130,246,0)] hover:shadow-[0_0_15px_rgba(59,130,246,0.15)]"
+  },
+  "components": {
+    "button": {
+      "primary": "bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-md transition-all shadow-[0_0_10px_rgba(37,99,235,0.2)] hover:shadow-[0_0_15px_rgba(37,99,235,0.4)]",
+      "secondary": "bg-white/5 hover:bg-white/10 text-white font-medium border border-white/10 px-4 py-2 rounded-md transition-colors",
+      "danger": "bg-red-500/10 hover:bg-red-500/20 text-red-500 font-medium border border-red-500/20 px-4 py-2 rounded-md transition-colors"
+    },
+    "badge": {
+      "live": "flex items-center gap-1.5 px-2 py-1 rounded-md bg-red-500/10 text-red-500 border border-red-500/20 text-xs font-mono uppercase tracking-widest",
+      "status_ok": "flex items-center gap-1.5 px-2 py-1 rounded-md bg-green-500/10 text-green-500 border border-green-500/20 text-xs font-mono uppercase tracking-widest"
+    },
+    "timeline_item": "flex gap-4 p-3 hover:bg-white/5 rounded-lg transition-colors border-l-2 border-transparent hover:border-blue-500 cursor-pointer"
+  },
+  "motion_and_interactions": {
+    "hover": "transition-all duration-200 ease-in-out",
+    "feed_overlay": "opacity-0 group-hover:opacity-100 transition-opacity duration-300 absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex flex-col justify-end p-4",
+    "pulse_dot": "animate-pulse w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]"
+  },
+  "media": {
+    "hero_background": {
+      "url": "https://images.unsplash.com/photo-1714548529197-537c1f0b6aa7",
+      "description": "Abstract dark background with digital lines, perfect for the tech/security SaaS hero section. Use with a strong opacity overlay.",
+      "category": "hero"
+    },
+    "feature_camera": {
+      "url": "https://images.unsplash.com/photo-1528312635006-8ea0bc49ec63",
+      "description": "Clean, modern security camera to illustrate the Raspberry Pi / Camera connection feature.",
+      "category": "feature"
+    },
+    "user_avatar": {
+      "url": "https://images.pexels.com/photos/17685845/pexels-photo-17685845.jpeg",
+      "description": "Professional avatar for the user profile or Super Admin demo.",
+      "category": "avatar"
+    },
+    "logo_google": {
+      "url": "https://images.unsplash.com/photo-1705988142466-e468bc654eeb",
+      "description": "Abstract 3D pill logo used as a placeholder for Google Drive or third-party integrations.",
+      "category": "logo"
+    },
+    "logo_twilio": {
+      "url": "https://images.pexels.com/photos/26576975/pexels-photo-26576975.jpeg",
+      "description": "Minimalist tech logo used as a placeholder for Twilio / WhatsApp integration.",
+      "category": "logo"
+    }
+  },
+  "instructions_to_main_agent": [
+    "INSTALLATION: Add '@phosphor-icons/react' for professional SaaS icons, 'recharts' for Admin metrics, and 'lucide-react' if Shadcn requires it.",
+    "FONTS: Import 'Outfit' (weights 400,600,700) and 'Manrope' (weights 400,500,600) via Google Fonts in index.css.",
+    "LAYOUT STRATEGY: Build a persistent sidebar on the left and a top header. The main dashboard should feature a 2x2 camera grid in the main column and a vertical timeline of AI events on the right (lateral timeline).",
+    "DARK MODE ONLY: Hardcode the application to dark mode. Use the colors specified in this guideline (e.g., bg-[#090A0F] for the body, bg-[#12141D] for cards).",
+    "CAMERA PLACEHOLDERS: Use the 'live_feed_container' style for the 2x2 grid. Add a pulsing red dot and 'LIVE' badge on each feed. Include overlay controls (zoom, settings) that appear on hover.",
+    "TESTING: Ensure every interactive element (buttons, forms, camera feeds, timeline items) has a descriptive 'data-testid' (e.g., 'data-testid=\"login-submit-button\"', 'data-testid=\"camera-feed-1\"').",
+    "LANDING PAGE: Implement a sleek hero section using the 'hero_background' image with a heavy black overlay. Highlight features like YOLOv8n detection, Google Drive sync, and WhatsApp alerts.",
+    "SUPER ADMIN: Use Shadcn Tables (customized with dark mode borders) to list users, devices, and plans. Avoid purely white text; use text-gray-300 for table cells to maintain the sleek aesthetic."
+  ]
+}
