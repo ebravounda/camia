@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
 import api from "@/lib/api";
-import { AlertTriangle, Filter, User, Car, Dog, Activity, ShieldAlert, EyeOff } from "lucide-react";
+import { AlertTriangle, Filter, User, Car, Dog, Activity, ShieldAlert, EyeOff, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 
 const TYPE_META = {
   person: { icon: User, color: "text-blue-400 bg-blue-500/10 border-blue-500/20", label: "Persona" },
@@ -17,6 +20,7 @@ export default function Events() {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("");
+  const [selected, setSelected] = useState(null);
 
   const load = async (type = "") => {
     setLoading(true);
@@ -30,6 +34,10 @@ export default function Events() {
   };
 
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const id = setInterval(() => load(filter), 15000);
+    return () => clearInterval(id);
+  }, [filter]);
 
   const apply = (t) => { setFilter(t); load(t); };
 
@@ -70,12 +78,17 @@ export default function Events() {
         {events.map((ev) => {
           const meta = TYPE_META[ev.event_type] || TYPE_META.motion;
           return (
-            <div key={ev.id} data-testid={`event-row-${ev.id}`} className="p-4 hover:bg-white/5 transition-colors flex gap-4 items-center cursor-pointer border-l-2 border-transparent hover:border-blue-500">
+            <div
+              key={ev.id}
+              data-testid={`event-row-${ev.id}`}
+              onClick={() => setSelected(ev)}
+              className="p-4 hover:bg-white/5 transition-colors flex gap-4 items-center cursor-pointer border-l-2 border-transparent hover:border-blue-500"
+            >
               <div className={`w-10 h-10 rounded-md border flex items-center justify-center ${meta.color}`}>
                 <meta.icon className="w-4 h-4" />
               </div>
-              <div className="w-20 h-12 rounded-md bg-black/50 border border-white/10 flex items-center justify-center text-[10px] text-gray-600 font-mono shrink-0">
-                {ev.thumbnail_url ? <img src={ev.thumbnail_url} alt="" className="w-full h-full object-cover rounded-md" /> : "preview"}
+              <div className="w-20 h-12 rounded-md bg-black/50 border border-white/10 flex items-center justify-center text-[10px] text-gray-600 font-mono shrink-0 overflow-hidden">
+                {ev.thumbnail_url ? <img src={ev.thumbnail_url} alt="" className="w-full h-full object-cover" /> : "preview"}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="font-medium text-sm">{meta.label}</div>
@@ -93,6 +106,78 @@ export default function Events() {
           );
         })}
       </div>
+
+      {/* Event detail modal */}
+      <Dialog open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
+        <DialogContent className="bg-[#12141D] border-white/10 text-white max-w-3xl p-0 overflow-hidden">
+          {selected && (() => {
+            const meta = TYPE_META[selected.event_type] || TYPE_META.motion;
+            return (
+              <>
+                <DialogHeader className="px-6 py-5 border-b border-white/10">
+                  <DialogTitle className="font-display flex items-center gap-3" data-testid="event-modal-title">
+                    <span className={`w-9 h-9 rounded-md border flex items-center justify-center ${meta.color}`}>
+                      <meta.icon className="w-4 h-4" />
+                    </span>
+                    <div>
+                      <div className="text-base">{meta.label}</div>
+                      <div className="text-xs text-gray-500 font-normal font-mono mt-0.5">
+                        {selected.camera_name || selected.camera_id} ·{" "}
+                        {new Date(selected.created_at).toLocaleString("es-ES")}
+                      </div>
+                    </div>
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="p-6 space-y-4">
+                  {selected.thumbnail_url ? (
+                    <div className="rounded-lg bg-black border border-white/10 overflow-hidden">
+                      <img
+                        src={selected.thumbnail_url}
+                        alt={meta.label}
+                        className="w-full max-h-[60vh] object-contain"
+                        data-testid="event-modal-thumbnail"
+                      />
+                    </div>
+                  ) : (
+                    <div className="aspect-video rounded-lg bg-black border border-white/10 flex items-center justify-center text-gray-500 text-sm">
+                      Sin miniatura
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="rounded-md bg-white/5 border border-white/10 p-3">
+                      <div className="text-[10px] uppercase tracking-widest font-mono text-gray-500">Tipo</div>
+                      <div className="text-sm mt-1 capitalize">{meta.label}</div>
+                    </div>
+                    <div className="rounded-md bg-white/5 border border-white/10 p-3">
+                      <div className="text-[10px] uppercase tracking-widest font-mono text-gray-500">Severidad</div>
+                      <div className={`text-sm mt-1 capitalize ${
+                        selected.severity === "high" ? "text-red-400"
+                          : selected.severity === "medium" ? "text-amber-400" : "text-gray-300"
+                      }`}>{selected.severity}</div>
+                    </div>
+                    <div className="rounded-md bg-white/5 border border-white/10 p-3">
+                      <div className="text-[10px] uppercase tracking-widest font-mono text-gray-500">Cámara</div>
+                      <div className="text-sm mt-1 truncate">{selected.camera_name || "—"}</div>
+                    </div>
+                  </div>
+
+                  {selected.description && (
+                    <div className="rounded-md bg-white/5 border border-white/10 p-3">
+                      <div className="text-[10px] uppercase tracking-widest font-mono text-gray-500 mb-1">Descripción</div>
+                      <div className="text-sm text-gray-200">{selected.description}</div>
+                    </div>
+                  )}
+
+                  <div className="rounded-md bg-[#090A0F] border border-white/10 p-3 text-[11px] font-mono text-gray-500 break-all">
+                    event_id: {selected.id}
+                  </div>
+                </div>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }

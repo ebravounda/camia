@@ -41,6 +41,10 @@ function AppRouter() {
         element={<ProtectedRoute><Cameras /></ProtectedRoute>}
       />
       <Route
+        path="/cameras/:id/live"
+        element={<ProtectedRoute><CameraLive /></ProtectedRoute>}
+      />
+      <Route
         path="/devices"
         element={<ProtectedRoute><Devices /></ProtectedRoute>}
       />

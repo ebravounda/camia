@@ -127,6 +127,60 @@ def _encode_stream_jpeg(frame) -> Optional[bytes]:
     return buf.tobytes()
 
 
+# ---------------- Face detection (Haar cascade, fast on Pi 3B+) ----------------
+FACE_DETECT_INTERVAL = float(os.environ.get("SMARTCAM_FACE_INTERVAL", "0.5"))  # seconds between detections
+FACE_SAVE_COOLDOWN = int(os.environ.get("SMARTCAM_FACE_COOLDOWN", "60"))  # seconds between face events per cam
+FACE_ENABLED = os.environ.get("SMARTCAM_FACE", "1") not in ("0", "false", "no")
+FACE_MIN_SIZE = int(os.environ.get("SMARTCAM_FACE_MIN_SIZE", "40"))
+
+_face_cascade = None
+
+
+def _get_face_cascade():
+    global _face_cascade
+    if cv2 is None:
+        return None
+    if _face_cascade is None:
+        path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+        cascade = cv2.CascadeClassifier(path)
+        _face_cascade = cascade if not cascade.empty() else False
+    return _face_cascade if _face_cascade else None
+
+
+def _detect_faces(frame) -> list:
+    """Return list of (x, y, w, h) face rectangles."""
+    cascade = _get_face_cascade()
+    if cascade is None:
+        return []
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    gray = cv2.equalizeHist(gray)
+    faces = cascade.detectMultiScale(
+        gray, scaleFactor=1.2, minNeighbors=5,
+        minSize=(FACE_MIN_SIZE, FACE_MIN_SIZE),
+    )
+    return [tuple(int(v) for v in f) for f in faces]
+
+
+def _draw_faces(frame, faces) -> None:
+    """Draw yellow bounding boxes on detected faces (in place)."""
+    for (x, y, w, h) in faces:
+        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 255), 2)
+        label = "CARA"
+        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+        cv2.rectangle(frame, (x, y - th - 6), (x + tw + 6, y), (0, 255, 255), -1)
+        cv2.putText(frame, label, (x + 3, y - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
+
+
+def _crop_face(frame, face_rect, pad: int = 25):
+    x, y, w, h = face_rect
+    h_f, w_f = frame.shape[:2]
+    x0 = max(0, x - pad)
+    y0 = max(0, y - pad)
+    x1 = min(w_f, x + w + pad)
+    y1 = min(h_f, y + h + pad)
+    return frame[y0:y1, x0:x1]
+
+
 # ---------------- Per-camera worker ----------------
 def _worker(api_url: str, api_key: str, cam: Dict[str, Any], stop_event: threading.Event) -> None:
     """One thread per assigned camera. Runs motion detection + periodic thumbnails."""
@@ -175,6 +229,9 @@ def _worker(api_url: str, api_key: str, cam: Dict[str, Any], stop_event: threadi
     last_thumb_at = 0.0
     last_event_at = 0.0
     last_stream_at = 0.0
+    last_face_detect_at = 0.0
+    last_face_saved_at = 0.0
+    last_faces = []
     stream_interval = 1.0 / max(1.0, STREAM_FPS)
     prev_gray = None
     period = 1.0 / max(0.5, MOTION_CHECK_FPS)
@@ -226,12 +283,46 @@ def _worker(api_url: str, api_key: str, cam: Dict[str, Any], stop_event: threadi
             # Live stream upload (high-rate, raw JPEG, no DB writes)
             if STREAM_ENABLED and (time.time() - last_stream_at) >= stream_interval:
                 last_stream_at = time.time()
-                jpeg = _encode_stream_jpeg(frame)
+
+                # Face detection (slower rate to save CPU)
+                if FACE_ENABLED and (time.time() - last_face_detect_at) >= FACE_DETECT_INTERVAL:
+                    last_face_detect_at = time.time()
+                    try:
+                        last_faces = _detect_faces(frame)
+                    except Exception as e:
+                        if int(time.time()) % 30 == 0:
+                            print(f"[agent][cam:{name}] face detect error: {e}", file=sys.stderr)
+                        last_faces = []
+
+                    # Save first face as an event (rate-limited)
+                    if last_faces and (time.time() - last_face_saved_at) >= FACE_SAVE_COOLDOWN:
+                        last_face_saved_at = time.time()
+                        try:
+                            face_crop = _crop_face(frame, last_faces[0])
+                            face_b64 = _encode_thumbnail(face_crop)
+                            if face_b64:
+                                client.report_event(
+                                    api_url, api_key, cam_id,
+                                    event_type="unknown_face",
+                                    severity="medium",
+                                    description=f"{len(last_faces)} cara{'s' if len(last_faces) > 1 else ''} detectada{'s' if len(last_faces) > 1 else ''}",
+                                    thumbnail_b64=face_b64,
+                                )
+                                print(f"[agent][cam:{name}] face event saved ({len(last_faces)} face(s))")
+                        except Exception as e:
+                            print(f"[agent][cam:{name}] face event error: {e}", file=sys.stderr)
+
+                # Draw face boxes on a copy then encode (don't pollute motion-detection gray)
+                display_frame = frame
+                if last_faces:
+                    display_frame = frame.copy()
+                    _draw_faces(display_frame, last_faces)
+
+                jpeg = _encode_stream_jpeg(display_frame)
                 if jpeg:
                     try:
                         client.upload_live_frame(api_url, api_key, cam_id, jpeg)
                     except Exception as e:
-                        # Don't spam logs; only print one-line summary on every 30s
                         if int(time.time()) % 30 == 0:
                             print(f"[agent][cam:{name}] stream upload error: {e}", file=sys.stderr)
 
