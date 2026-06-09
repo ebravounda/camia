@@ -17,6 +17,7 @@ import Pricing from "@/pages/Pricing";
 import Settings from "@/pages/Settings";
 import AdminPanel from "@/pages/AdminPanel";
 import BillingSuccess from "@/pages/BillingSuccess";
+import CameraLive from "@/pages/CameraLive";
 
 function AppRouter() {
   // Handle Emergent Google Auth callback synchronously during render

@@ -69,6 +69,38 @@ def upload_thumbnail(api_url: str, api_key: str, camera_id: str, b64: str) -> No
     r.raise_for_status()
 
 
+# Shared session for live-frame streaming (keep-alive critical for 5fps).
+_stream_session: Optional[requests.Session] = None
+
+
+def _get_stream_session() -> requests.Session:
+    global _stream_session
+    if _stream_session is None:
+        s = requests.Session()
+        adapter = requests.adapters.HTTPAdapter(pool_connections=1, pool_maxsize=4)
+        s.mount("https://", adapter)
+        s.mount("http://", adapter)
+        _stream_session = s
+    return _stream_session
+
+
+def upload_live_frame(api_url: str, api_key: str, camera_id: str, jpeg_bytes: bytes) -> None:
+    """POST raw JPEG bytes for live streaming. Keep-alive HTTP session."""
+    session = _get_stream_session()
+    headers = {
+        "Authorization": f"Agent {api_key}",
+        "Content-Type": "image/jpeg",
+        "X-Camera-Id": camera_id,
+    }
+    r = session.post(
+        f"{api_url.rstrip('/')}/agent/frame",
+        data=jpeg_bytes,
+        headers=headers,
+        timeout=5,
+    )
+    r.raise_for_status()
+
+
 def report_event(api_url: str, api_key: str, camera_id: str, event_type: str = "motion",
                  severity: str = "low", description: Optional[str] = None,
                  thumbnail_b64: Optional[str] = None) -> None:

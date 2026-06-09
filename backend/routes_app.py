@@ -1,14 +1,17 @@
 """App routes: devices, cameras, events, super admin."""
+import asyncio
 import secrets
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import Response, StreamingResponse
 
 from models import (
     Device, DeviceCreate, Camera, CameraCreate, Event, Plan,
     UserPublic, utcnow, new_id,
 )
 from auth import get_current_user, require_super_admin
+from streaming_hub import get_frame, LIVE_FRAMES
 
 
 router = APIRouter(tags=["app"])
@@ -185,6 +188,64 @@ async def delete_camera(camera_id: str, user: dict = Depends(get_current_user)):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Cámara no encontrada")
     return {"message": "Cámara eliminada"}
+
+
+# ===== LIVE STREAMING (MJPEG over HTTP) =====
+@router.get("/cameras/{camera_id}/snapshot.jpg")
+async def camera_snapshot(camera_id: str, user: dict = Depends(get_current_user)):
+    """Returns the latest JPEG frame for a camera (poll-based clients)."""
+    from server import db
+    cam = await db.cameras.find_one({"id": camera_id, "user_id": user["id"]}, {"_id": 0})
+    if not cam:
+        raise HTTPException(status_code=404, detail="Cámara no encontrada")
+    entry = get_frame(camera_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Sin frame disponible")
+    _, jpeg = entry
+    return Response(
+        content=jpeg,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "no-store, must-revalidate", "Pragma": "no-cache"},
+    )
+
+
+@router.get("/cameras/{camera_id}/stream.mjpg")
+async def camera_stream_mjpeg(camera_id: str, request: Request, user: dict = Depends(get_current_user)):
+    """Multipart MJPEG stream — browser displays it natively as a video."""
+    from server import db
+    cam = await db.cameras.find_one({"id": camera_id, "user_id": user["id"]}, {"_id": 0})
+    if not cam:
+        raise HTTPException(status_code=404, detail="Cámara no encontrada")
+
+    boundary = "smartcamframe"
+
+    async def generator():
+        last_ts = 0.0
+        try:
+            # Initial bytes so browser knows this is an MJPEG stream
+            while True:
+                if await request.is_disconnected():
+                    return
+                entry = get_frame(camera_id)
+                if entry:
+                    ts, jpeg = entry
+                    if ts != last_ts:
+                        last_ts = ts
+                        header = (
+                            f"--{boundary}\r\n"
+                            f"Content-Type: image/jpeg\r\n"
+                            f"Content-Length: {len(jpeg)}\r\n\r\n"
+                        ).encode()
+                        yield header + jpeg + b"\r\n"
+                await asyncio.sleep(0.05)  # poll 20Hz, actually limited by agent push rate
+        except asyncio.CancelledError:
+            return
+
+    return StreamingResponse(
+        generator(),
+        media_type=f"multipart/x-mixed-replace; boundary={boundary}",
+        headers={"Cache-Control": "no-store, must-revalidate", "Pragma": "no-cache"},
+    )
 
 
 # ===== EVENTS =====

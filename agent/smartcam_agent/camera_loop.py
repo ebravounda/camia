@@ -24,6 +24,12 @@ MOTION_AREA_THRESHOLD = int(os.environ.get("SMARTCAM_MOTION_AREA", "1500"))  # p
 MOTION_COOLDOWN_SEC = int(os.environ.get("SMARTCAM_MOTION_COOLDOWN", "30"))
 THUMB_MAX_WIDTH = 480
 
+# Live streaming defaults (low for Pi 3B+, can be raised on Pi 4/5).
+STREAM_FPS = float(os.environ.get("SMARTCAM_STREAM_FPS", "5"))
+STREAM_MAX_WIDTH = int(os.environ.get("SMARTCAM_STREAM_MAX_WIDTH", "640"))
+STREAM_JPEG_QUALITY = int(os.environ.get("SMARTCAM_STREAM_QUALITY", "65"))
+STREAM_ENABLED = os.environ.get("SMARTCAM_STREAM", "1") not in ("0", "false", "no")
+
 # Camera capture defaults (override via env vars). MJPG @ 640x480 is a great
 # default for Raspberry Pi 3B+: low CPU, compressed pixel format, plenty of fps.
 CAM_WIDTH = int(os.environ.get("SMARTCAM_CAM_WIDTH", "640"))
@@ -107,6 +113,20 @@ def _encode_thumbnail(frame) -> Optional[str]:
     return base64.b64encode(buf.tobytes()).decode("ascii")
 
 
+def _encode_stream_jpeg(frame) -> Optional[bytes]:
+    """Resize and JPEG-encode a frame as raw bytes for live streaming."""
+    if cv2 is None or frame is None:
+        return None
+    h, w = frame.shape[:2]
+    if w > STREAM_MAX_WIDTH:
+        scale = STREAM_MAX_WIDTH / float(w)
+        frame = cv2.resize(frame, (STREAM_MAX_WIDTH, int(h * scale)))
+    ok, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), STREAM_JPEG_QUALITY])
+    if not ok:
+        return None
+    return buf.tobytes()
+
+
 # ---------------- Per-camera worker ----------------
 def _worker(api_url: str, api_key: str, cam: Dict[str, Any], stop_event: threading.Event) -> None:
     """One thread per assigned camera. Runs motion detection + periodic thumbnails."""
@@ -154,6 +174,8 @@ def _worker(api_url: str, api_key: str, cam: Dict[str, Any], stop_event: threadi
 
     last_thumb_at = 0.0
     last_event_at = 0.0
+    last_stream_at = 0.0
+    stream_interval = 1.0 / max(1.0, STREAM_FPS)
     prev_gray = None
     period = 1.0 / max(0.5, MOTION_CHECK_FPS)
 
@@ -200,6 +222,18 @@ def _worker(api_url: str, api_key: str, cam: Dict[str, Any], stop_event: threadi
                         client.upload_thumbnail(api_url, api_key, cam_id, thumb)
                     except Exception as e:
                         print(f"[agent][cam:{name}] thumb upload failed: {e}", file=sys.stderr)
+
+            # Live stream upload (high-rate, raw JPEG, no DB writes)
+            if STREAM_ENABLED and (time.time() - last_stream_at) >= stream_interval:
+                last_stream_at = time.time()
+                jpeg = _encode_stream_jpeg(frame)
+                if jpeg:
+                    try:
+                        client.upload_live_frame(api_url, api_key, cam_id, jpeg)
+                    except Exception as e:
+                        # Don't spam logs; only print one-line summary on every 30s
+                        if int(time.time()) % 30 == 0:
+                            print(f"[agent][cam:{name}] stream upload error: {e}", file=sys.stderr)
 
             # frame pacing
             elapsed = time.time() - t0

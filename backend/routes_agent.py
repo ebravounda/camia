@@ -11,12 +11,13 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Header
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from models import utcnow, new_id
 from auth import get_current_user
+from streaming_hub import set_frame as stream_set_frame
 
 
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -236,6 +237,32 @@ async def download_agent(user: dict = Depends(get_current_user)):
     buf.seek(0)
     headers = {"Content-Disposition": 'attachment; filename="smartcam-agent.tar.gz"'}
     return StreamingResponse(buf, media_type="application/gzip", headers=headers)
+
+
+# ---------- Live frame upload (raw JPEG) ----------
+MAX_FRAME_SIZE = 500_000  # 500KB per frame is enough for 720p MJPEG
+
+
+@router.post("/frame")
+async def upload_frame(
+    request: Request,
+    x_camera_id: str = Header(..., alias="X-Camera-Id"),
+    device: dict = Depends(get_current_agent),
+):
+    """Agent uploads a single JPEG frame (Content-Type: image/jpeg)."""
+    from server import db
+    cam = await db.cameras.find_one(
+        {"id": x_camera_id, "device_id": device["id"]}, {"_id": 0}
+    )
+    if not cam:
+        raise HTTPException(status_code=404, detail="Cámara no asignada a este dispositivo")
+    body = await request.body()
+    if not body:
+        raise HTTPException(status_code=400, detail="Frame vacío")
+    if len(body) > MAX_FRAME_SIZE:
+        raise HTTPException(status_code=413, detail="Frame demasiado grande")
+    stream_set_frame(x_camera_id, body)
+    return {"ok": True, "size": len(body)}
 
 
 # ---------- Background task: mark devices offline if no heartbeat ----------

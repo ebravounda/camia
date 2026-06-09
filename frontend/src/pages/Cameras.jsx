@@ -10,8 +10,9 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Cctv, Plus, Trash2 } from "lucide-react";
+import { Cctv, Plus, Trash2, Play } from "lucide-react";
 import { toast } from "sonner";
+import { Link } from "react-router-dom";
 
 export default function Cameras() {
   const [cameras, setCameras] = useState([]);
@@ -148,11 +149,18 @@ export default function Cameras() {
                   </div>
                 </div>
                 <div className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="font-display font-semibold">{c.name}</div>
-                    <button onClick={() => remove(c.id)} className="p-1.5 rounded hover:bg-red-500/10 text-gray-400 hover:text-red-400" data-testid={`camera-delete-${c.id}`}>
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-display font-semibold truncate">{c.name}</div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Link to={`/cameras/${c.id}/live`} data-testid={`camera-live-${c.id}`}>
+                        <button className="p-1.5 rounded text-blue-400 hover:bg-blue-500/10 hover:text-blue-300 transition-colors" title="Ver en vivo">
+                          <Play className="w-3.5 h-3.5" />
+                        </button>
+                      </Link>
+                      <button onClick={() => remove(c.id)} className="p-1.5 rounded hover:bg-red-500/10 text-gray-400 hover:text-red-400" data-testid={`camera-delete-${c.id}`}>
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                   <div className="text-xs text-gray-500 mt-1 font-mono">/dev/video{c.usb_index} · {device?.name || "—"}</div>
                 </div>
