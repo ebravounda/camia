@@ -100,6 +100,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=${SERVICE_USER}
+WorkingDirectory=${INSTALL_DIR}
 Environment=SMARTCAM_CONFIG=${CONFIG_FILE}
 ExecStart=${INSTALL_DIR}/venv/bin/python -m smartcam_agent.agent --config ${CONFIG_FILE} run
 Restart=on-failure
