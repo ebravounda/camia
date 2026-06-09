@@ -24,6 +24,13 @@ export function AuthProvider({ children }) {
       setLoading(false);
       return;
     }
+    // Skip /me if no token cached locally (avoids noisy 401s on public pages).
+    // Cookies are not visible to JS; this is only a UX optimization.
+    const hasToken = typeof window !== "undefined" && !!localStorage.getItem("sc_access_token");
+    if (!hasToken) {
+      setLoading(false);
+      return;
+    }
     fetchMe().finally(() => setLoading(false));
   }, [fetchMe]);
 
