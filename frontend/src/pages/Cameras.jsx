@@ -129,10 +129,22 @@ export default function Cameras() {
             const device = devices.find((d) => d.id === c.device_id);
             return (
               <div key={c.id} data-testid={`camera-card-${c.id}`} className="rounded-xl bg-[#12141D] border border-white/10 overflow-hidden">
-                <div className="aspect-video bg-black flex items-center justify-center text-gray-700 relative">
-                  <Cctv className="w-10 h-10 opacity-40" />
-                  <div className="absolute top-3 left-3 flex items-center gap-1.5 px-2 py-1 rounded-md bg-black/60 border border-white/10 text-[10px] font-mono uppercase tracking-widest text-gray-400">
-                    OFFLINE
+                <div className="aspect-video bg-black flex items-center justify-center text-gray-700 relative overflow-hidden">
+                  {c.last_thumbnail ? (
+                    <img
+                      src={`data:image/jpeg;base64,${c.last_thumbnail}`}
+                      alt={c.name}
+                      className="w-full h-full object-cover"
+                      data-testid={`camera-thumb-${c.id}`}
+                    />
+                  ) : (
+                    <Cctv className="w-10 h-10 opacity-40" />
+                  )}
+                  <div className={`absolute top-3 left-3 flex items-center gap-1.5 px-2 py-1 rounded-md bg-black/60 border border-white/10 text-[10px] font-mono uppercase tracking-widest ${
+                    c.status === "live" ? "text-emerald-400" : "text-gray-400"
+                  }`}>
+                    {c.status === "live" && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 live-dot" />}
+                    {c.status === "live" ? "LIVE" : "OFFLINE"}
                   </div>
                 </div>
                 <div className="p-4">

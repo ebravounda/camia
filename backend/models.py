@@ -68,6 +68,8 @@ class Device(DeviceBase):
     cpu_temp: Optional[float] = None
     cpu_usage: Optional[float] = None
     ip_address: Optional[str] = None
+    agent_version: Optional[str] = None
+    hostname: Optional[str] = None
     created_at: datetime = Field(default_factory=utcnow)
 
 
@@ -89,6 +91,8 @@ class Camera(CameraBase):
     user_id: str
     status: Literal["offline", "live", "error"] = "offline"
     last_event_at: Optional[datetime] = None
+    last_thumbnail: Optional[str] = None  # base64 JPEG, small
+    last_thumbnail_at: Optional[datetime] = None
     detection_zones: List[dict] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utcnow)
 

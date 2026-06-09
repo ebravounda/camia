@@ -14,6 +14,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from auth import router as auth_router, seed_admin
 from routes_app import router as app_router, admin_router
 from routes_billing import router as billing_router, stripe_webhook_handler
+from routes_agent import router as agent_router, mark_stale_devices_offline
 
 
 # MongoDB
@@ -42,6 +43,7 @@ api_router.include_router(auth_router)
 api_router.include_router(app_router)
 api_router.include_router(admin_router)
 api_router.include_router(billing_router)
+api_router.include_router(agent_router)
 
 
 # Stripe webhook (public, no auth)
@@ -71,13 +73,17 @@ async def startup():
     await db.users.create_index("id", unique=True)
     await db.devices.create_index("id", unique=True)
     await db.devices.create_index("pairing_token")
+    await db.devices.create_index("agent_api_key")
     await db.devices.create_index("user_id")
     await db.cameras.create_index("id", unique=True)
     await db.cameras.create_index("user_id")
+    await db.cameras.create_index("device_id")
     await db.events.create_index([("user_id", 1), ("created_at", -1)])
     await db.payment_transactions.create_index("session_id", unique=True)
     await db.user_sessions.create_index("session_token", unique=True)
     await seed_admin(db)
+    # Mark stale devices offline at startup
+    await mark_stale_devices_offline(db)
     logger.info("SmartCam SaaS API started; admin seeded.")
 
 

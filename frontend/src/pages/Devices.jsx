@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
-import { Cpu, Plus, Copy, RefreshCw, Trash2, Wifi, WifiOff } from "lucide-react";
+import { Cpu, Plus, Copy, RefreshCw, Trash2, Wifi, WifiOff, Download, Thermometer, Activity, Globe } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Devices() {
@@ -68,11 +68,45 @@ export default function Devices() {
     toast.success("Token copiado");
   };
 
+  const downloadAgent = async () => {
+    try {
+      const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+      const token = localStorage.getItem("sc_access_token");
+      const res = await fetch(`${BACKEND_URL}/api/agent/download`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("No se pudo descargar");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "smartcam-agent.tar.gz";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success("Agente descargado");
+    } catch (e) {
+      toast.error("Error al descargar el agente");
+    }
+  };
+
   return (
     <AppShell
       title="Raspberry Pi"
       subtitle="Vincula tus dispositivos usando tokens de emparejamiento"
       action={
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={downloadAgent}
+            data-testid="devices-download-agent-button"
+            className="bg-white/5 border-white/15 text-white hover:bg-white/10"
+          >
+            <Download className="w-4 h-4 mr-1.5" /> Descargar agente
+          </Button>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button data-testid="devices-add-button" className="bg-blue-600 hover:bg-blue-700 shadow-[0_0_14px_rgba(37,99,235,0.35)]">
@@ -105,6 +139,7 @@ export default function Devices() {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       }
     >
       {loading ? (
@@ -150,6 +185,23 @@ export default function Devices() {
                   </button>
                 </div>
               </div>
+
+              {d.is_paired && (
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  <div className="rounded-md bg-white/5 border border-white/10 p-2">
+                    <div className="text-[9px] uppercase tracking-widest font-mono text-gray-500 flex items-center gap-1"><Thermometer className="w-2.5 h-2.5" /> CPU °C</div>
+                    <div className="text-sm font-mono mt-0.5">{d.cpu_temp != null ? `${d.cpu_temp}°` : "—"}</div>
+                  </div>
+                  <div className="rounded-md bg-white/5 border border-white/10 p-2">
+                    <div className="text-[9px] uppercase tracking-widest font-mono text-gray-500 flex items-center gap-1"><Activity className="w-2.5 h-2.5" /> CPU %</div>
+                    <div className="text-sm font-mono mt-0.5">{d.cpu_usage != null ? `${d.cpu_usage}%` : "—"}</div>
+                  </div>
+                  <div className="rounded-md bg-white/5 border border-white/10 p-2">
+                    <div className="text-[9px] uppercase tracking-widest font-mono text-gray-500 flex items-center gap-1"><Globe className="w-2.5 h-2.5" /> IP</div>
+                    <div className="text-xs font-mono mt-0.5 truncate">{d.ip_address || "—"}</div>
+                  </div>
+                </div>
+              )}
 
               <div className="mt-4 flex items-center justify-between">
                 <div className="text-[11px] text-gray-500 font-mono">

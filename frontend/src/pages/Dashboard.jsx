@@ -28,37 +28,70 @@ const StatCard = ({ icon: Icon, label, value, accent = "blue", testid }) => {
   );
 };
 
-const LiveTile = ({ index }) => (
-  <div className="relative aspect-video rounded-lg bg-black border border-white/10 overflow-hidden group" data-testid={`live-tile-${index}`}>
-    <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(59,130,246,0.08),transparent_70%)]" />
-    <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-600">
-      <Cctv className="w-10 h-10 mb-2 opacity-40" />
-      <div className="text-xs font-mono uppercase tracking-widest">Sin cámara · slot {index}</div>
-      <div className="text-[10px] text-gray-700 mt-1">Empareja tu Raspberry para activar</div>
+const LiveTile = ({ camera, index }) => {
+  if (!camera) {
+    return (
+      <div className="relative aspect-video rounded-lg bg-black border border-white/10 overflow-hidden group" data-testid={`live-tile-${index}`}>
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(59,130,246,0.08),transparent_70%)]" />
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-600">
+          <Cctv className="w-10 h-10 mb-2 opacity-40" />
+          <div className="text-xs font-mono uppercase tracking-widest">Sin cámara · slot {index}</div>
+          <div className="text-[10px] text-gray-700 mt-1">Empareja tu Raspberry para activar</div>
+        </div>
+        <div className="absolute top-3 left-3 flex items-center gap-2 px-2 py-1 rounded-md bg-black/60 border border-white/10 text-[10px] font-mono uppercase tracking-widest">
+          <span className="w-1.5 h-1.5 rounded-full bg-gray-600" />
+          OFFLINE
+        </div>
+      </div>
+    );
+  }
+  const isLive = camera.status === "live";
+  return (
+    <div className="relative aspect-video rounded-lg bg-black border border-white/10 overflow-hidden group" data-testid={`live-tile-${index}`}>
+      {camera.last_thumbnail ? (
+        <img src={`data:image/jpeg;base64,${camera.last_thumbnail}`} alt={camera.name} className="w-full h-full object-cover" />
+      ) : (
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-600">
+          <Cctv className="w-10 h-10 mb-2 opacity-40" />
+          <div className="text-xs font-mono uppercase tracking-widest">{camera.name}</div>
+          <div className="text-[10px] text-gray-700 mt-1">Esperando primer frame...</div>
+        </div>
+      )}
+      <div className={`absolute top-3 left-3 flex items-center gap-2 px-2 py-1 rounded-md bg-black/60 border border-white/10 text-[10px] font-mono uppercase tracking-widest ${
+        isLive ? "text-emerald-400" : "text-gray-400"
+      }`}>
+        {isLive && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 live-dot" />}
+        {isLive ? "LIVE" : "OFFLINE"}
+      </div>
+      <div className="absolute bottom-3 left-3 px-2 py-1 rounded-md bg-black/60 border border-white/10 text-[10px] font-mono">
+        {camera.name}
+      </div>
     </div>
-    <div className="absolute top-3 left-3 flex items-center gap-2 px-2 py-1 rounded-md bg-black/60 border border-white/10 text-[10px] font-mono uppercase tracking-widest">
-      <span className="w-1.5 h-1.5 rounded-full bg-gray-600" />
-      OFFLINE
-    </div>
-  </div>
-);
+  );
+};
 
 export default function Dashboard() {
   const { user } = useAuth();
   const [stats, setStats] = useState(null);
   const [events, setEvents] = useState([]);
+  const [cameras, setCameras] = useState([]);
 
   useEffect(() => {
-    (async () => {
+    const load = async () => {
       try {
-        const [s, e] = await Promise.all([
+        const [s, e, c] = await Promise.all([
           api.get("/dashboard/stats"),
           api.get("/events", { params: { limit: 8 } }),
+          api.get("/cameras"),
         ]);
         setStats(s.data);
         setEvents(e.data || []);
+        setCameras(c.data || []);
       } catch (err) { /* ignore */ }
-    })();
+    };
+    load();
+    const id = setInterval(load, 30000);
+    return () => clearInterval(id);
   }, []);
 
   return (
@@ -94,7 +127,7 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {[1, 2, 3, 4].map((i) => <LiveTile key={i} index={i} />)}
+            {[0, 1, 2, 3].map((i) => <LiveTile key={i} index={i + 1} camera={cameras[i]} />)}
           </div>
         </div>
 

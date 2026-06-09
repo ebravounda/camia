@@ -123,7 +123,10 @@ class TestDevices:
         assert r.status_code == 200
         d = r.json()
         assert d["pairing_token"]
-        assert len(d["pairing_token"]) == 12
+        # Phase 2: token format XXXX-XXXX-XXXX (14 chars: 12 hex upper + 2 hyphens)
+        assert len(d["pairing_token"]) == 14
+        import re as _re
+        assert _re.fullmatch(r"[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}", d["pairing_token"]), d["pairing_token"]
         assert d["is_paired"] is False
         device_id = d["id"]
         pytest.device_id = device_id

@@ -87,16 +87,25 @@ async def list_devices(user: dict = Depends(get_current_user)):
     return docs
 
 
+def _gen_pairing_token() -> str:
+    """Generate a XXXX-XXXX-XXXX pairing token (12 hex chars + 2 hyphens)."""
+    raw = secrets.token_hex(6).upper()  # 12 hex chars guaranteed
+    return f"{raw[0:4]}-{raw[4:8]}-{raw[8:12]}"
+
+
 @router.post("/devices", response_model=Device)
 async def create_device(payload: DeviceCreate, user: dict = Depends(get_current_user)):
     from server import db
-    token = secrets.token_urlsafe(12).upper().replace("-", "").replace("_", "")[:12]
+    token = _gen_pairing_token()
     doc = {
         "id": new_id(),
         "user_id": user["id"],
         "name": payload.name,
         "location": payload.location,
         "pairing_token": token,
+        "agent_api_key": None,
+        "agent_version": None,
+        "hostname": None,
         "is_paired": False,
         "status": "offline",
         "last_seen": None,
@@ -122,10 +131,15 @@ async def delete_device(device_id: str, user: dict = Depends(get_current_user)):
 @router.post("/devices/{device_id}/regenerate-token", response_model=Device)
 async def regenerate_pairing_token(device_id: str, user: dict = Depends(get_current_user)):
     from server import db
-    new_token = secrets.token_urlsafe(12).upper()[:12]
+    new_token = _gen_pairing_token()
     result = await db.devices.find_one_and_update(
         {"id": device_id, "user_id": user["id"]},
-        {"$set": {"pairing_token": new_token, "is_paired": False}},
+        {"$set": {
+            "pairing_token": new_token,
+            "is_paired": False,
+            "agent_api_key": None,
+            "status": "offline",
+        }},
         return_document=True,
         projection={"_id": 0},
     )

@@ -1,0 +1,49 @@
+{
+  "summary": "Phase 2 (Raspberry Pi agent) end-to-end validation: 57/57 backend pytest cases pass (34 Phase 1 regression + 23 new Phase 2 for agent endpoints). Pairing token format XXXX-XXXX-XXXX validated on create + regenerate. Full agent flow tested: /api/agent/pair, /api/agent/heartbeat (with Authorization: Agent <key>), /api/agent/cameras, /api/agent/detected-cameras, /api/agent/thumbnail (success + 413 oversize + 404 cross-tenant), /api/agent/event (success + 404 cross-tenant), /api/agent/download (401 without auth, 200 returns smartcam-agent.tar.gz containing install.sh + smartcam_agent/agent.py + client.py + heartbeat.py + camera_loop.py). Python agent CLI 'pair' verified — config.json correctly stores user-provided api_url (NOT the server-returned internal URL) plus api_key, device_id, name. Frontend /devices page: 'Descargar agente' button downloads tar.gz (27KB); after pair+heartbeat the device card shows ONLINE badge, CPU °C (42.1°), CPU % (25%), IP (10.0.0.99) and the pairing token in XXXX-XXXX-XXXX format. Frontend /cameras renders <img data:image/jpeg;base64,...> + LIVE badge when last_thumbnail is present.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/agent/pair", "issue": "Pair endpoint accepts the same pairing_token multiple times and re-issues a fresh agent_api_key each time (old key is overwritten and silently invalidated). Acceptable for now (idempotent re-pair) but consider invalidating the token on first successful pair so a leaked token cannot be reused — currently the only way to invalidate is the user clicking 'Regenerar'."},
+      {"endpoint": "/api/agent/event", "issue": "When thumbnail_b64 exceeds MAX_THUMB_B64_LEN it is silently truncated instead of returning 413 (different from /agent/thumbnail which returns 413). Inconsistent behaviour; either truncate both or reject both."},
+      {"endpoint": "/api/agent/download", "issue": "Endpoint walks /app/agent on every request and rebuilds the tar.gz in memory; fine for now but consider caching for production."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/devices new-device dialog", "issues": ["DialogDescription still says 'Recibirás un token de emparejamiento de 12 caracteres.' but the new format is 14 characters (XXXX-XXXX-XXXX). Update copy in Devices.jsx line ~120."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_agent.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Fix dialog copy in /app/frontend/src/pages/Devices.jsx: change 'token de emparejamiento de 12 caracteres' to '14 caracteres (XXXX-XXXX-XXXX)' to match the new format.",
+    "(Optional) Invalidate pairing_token after first successful /agent/pair so it cannot be re-used unless user regenerates it.",
+    "(Optional) Make /agent/event behave like /agent/thumbnail and return 413 instead of silently truncating an oversize thumbnail_b64.",
+    "(Optional, already noted in iteration_1) CORS_ORIGINS='*' with allow_credentials=True is a CORS spec violation; set explicit origins for production."
+  ],
+  "critical_code_review_comments": [
+    "routes_agent.get_current_agent does an inline import of `server.db` like the rest of the codebase — acceptable but fragile; consider db via FastAPI Depends or app.state.",
+    "routes_agent.download_agent walks /app/agent and includes every file. If __pycache__ is created at runtime (e.g. by importing the agent in tests) the filter is correct (skips __pycache__ parts). Good.",
+    "routes_agent.MAX_THUMB_B64_LEN = 250000 ≈ 187KB raw. Adequate for 480px JPEG q70 thumbnails as the agent generates.",
+    "models / device document grows over time with detected_cameras + cpu metrics — fine for now; eventually move detected_cameras and metrics to a TTL'd collection.",
+    "agent.py correctly saves the user-provided api_url (not the server-returned one). Verified explicitly via CLI test — config.json api_url == REACT_APP_BACKEND_URL/api."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py (updated token length assertion to 14 + regex XXXX-XXXX-XXXX)",
+    "/app/backend/tests/test_agent.py (new Phase 2 pytest suite, 23 cases)",
+    "/app/test_reports/iteration_2.json",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "success_rate": {"backend": "100% (57/57)", "frontend": "100% of in-scope Phase 2 flows (download agent, paired device card grid, ONLINE badge, camera thumbnail rendering)"},
+  "test_credentials": "Super admin: admin@smartcam.com / SmartCam2026! ; transient pytest users agentuser+TS / agentuser2+TS / testuser+TS / testuser2+TS (TestUser2026!) ; UI users uitest+TS, camuit+TS (TestUser2026!).",
+  "seed_data_creation": "Tests create TEST_PI_AGENT_1, TEST_PI_AGENT_2, TEST_CLI_PI, UI_PI_X, CAM_TEST_PI devices and TEST_AGENT_CAM, TEST_UI_CAM cameras. Cleanup tests delete created devices/cameras at end of each run. A few UI-created users remain (uitest+, camuit+ prefixes) for the admin to view.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 2 fully validated. The pytest suite at /app/backend/tests/{backend_test.py, test_agent.py} now covers 57 cases (Phase 1 + Phase 2). For Phase 3 (live streaming) add tests around MJPEG/WebRTC endpoints; for Phase 4 (Google Drive) test clip persistence; for Phase 5 (WhatsApp/Twilio) mock the Twilio client and test webhook notifications. The agent CLI is invoked via `cd /app/agent && python3 -m smartcam_agent.agent --config /tmp/test_cfg.json pair --token <TOK> --api-url $REACT_APP_BACKEND_URL/api`. The agent's `run` command requires real /dev/video* devices and opencv-python; it cannot be fully exercised inside the preview cluster but the individual building blocks (heartbeat.send_heartbeat, client.upload_thumbnail, client.report_event) can be unit-tested via the public REST endpoints, which is exactly what /app/backend/tests/test_agent.py does.",
+  "rca of the issue": "No critical bugs. Only nit found: Devices.jsx still says '12 caracteres' in the create-device dialog copy whereas the new token format is 14 characters. Single-line copy change in /app/frontend/src/pages/Devices.jsx."
+}

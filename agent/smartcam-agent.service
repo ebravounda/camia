@@ -1,0 +1,17 @@
+[Unit]
+Description=SmartCam Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Environment=SMARTCAM_CONFIG=/etc/smartcam/config.json
+ExecStart=/opt/smartcam-agent/venv/bin/python -m smartcam_agent.agent --config /etc/smartcam/config.json run
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
