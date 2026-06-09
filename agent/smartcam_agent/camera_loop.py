@@ -25,10 +25,16 @@ MOTION_COOLDOWN_SEC = int(os.environ.get("SMARTCAM_MOTION_COOLDOWN", "30"))
 THUMB_MAX_WIDTH = 480
 
 # Live streaming defaults (low for Pi 3B+, can be raised on Pi 4/5).
-STREAM_FPS = float(os.environ.get("SMARTCAM_STREAM_FPS", "5"))
+STREAM_FPS = float(os.environ.get("SMARTCAM_STREAM_FPS", "10"))
 STREAM_MAX_WIDTH = int(os.environ.get("SMARTCAM_STREAM_MAX_WIDTH", "640"))
 STREAM_JPEG_QUALITY = int(os.environ.get("SMARTCAM_STREAM_QUALITY", "65"))
 STREAM_ENABLED = os.environ.get("SMARTCAM_STREAM", "1") not in ("0", "false", "no")
+HUD_ENABLED = os.environ.get("SMARTCAM_HUD", "1") not in ("0", "false", "no")
+
+# Suspicious behaviour rules
+NIGHT_HOUR_START = int(os.environ.get("SMARTCAM_NIGHT_START", "22"))  # 22:00
+NIGHT_HOUR_END = int(os.environ.get("SMARTCAM_NIGHT_END", "6"))      # 06:00
+SUSPICIOUS_COOLDOWN_SEC = int(os.environ.get("SMARTCAM_SUSP_COOLDOWN", "120"))
 
 # Camera capture defaults (override via env vars). MJPG @ 640x480 is a great
 # default for Raspberry Pi 3B+: low CPU, compressed pixel format, plenty of fps.
@@ -171,6 +177,62 @@ def _draw_faces(frame, faces) -> None:
         cv2.putText(frame, label, (x + 3, y - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
 
 
+def _draw_motion_boxes(frame, rects) -> None:
+    """Draw cyan boxes around moving objects (in place)."""
+    for (x, y, w, h) in rects:
+        cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 200, 0), 1)
+
+
+def _draw_hud(frame, cam_name: str, faces, motion_rects, recent_event: bool,
+              suspicious: bool, is_night: bool) -> None:
+    """Overlay a 'security camera' style HUD on the frame."""
+    h, w = frame.shape[:2]
+
+    # Status pill (top-left)
+    if suspicious:
+        status = "SOSPECHOSO"
+        color = (0, 0, 255)  # red BGR
+    elif motion_rects:
+        status = "MOVIMIENTO"
+        color = (0, 165, 255)  # orange
+    elif faces:
+        status = "ROSTRO DETECTADO"
+        color = (0, 255, 255)  # yellow
+    else:
+        status = "VIGILANDO"
+        color = (0, 255, 0)  # green
+
+    # Top bar background
+    cv2.rectangle(frame, (0, 0), (w, 32), (0, 0, 0), -1)
+
+    # Pulse dot + status
+    cv2.circle(frame, (16, 16), 5, color, -1)
+    cv2.putText(frame, status, (30, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2, cv2.LINE_AA)
+
+    # Detection counters (center top)
+    info = f"Caras: {len(faces)}  Mov: {len(motion_rects)}"
+    cv2.putText(frame, info, (w // 2 - 70, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (220, 220, 220), 1, cv2.LINE_AA)
+
+    # Timestamp (top-right)
+    ts = time.strftime("%H:%M:%S")
+    cv2.putText(frame, ts, (w - 80, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (220, 220, 220), 1, cv2.LINE_AA)
+
+    # Bottom bar
+    cv2.rectangle(frame, (0, h - 24), (w, h), (0, 0, 0), -1)
+    cv2.putText(frame, f"SmartCam | {cam_name}", (10, h - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
+                (180, 180, 180), 1, cv2.LINE_AA)
+    if is_night:
+        cv2.putText(frame, "NOCHE", (w - 60, h - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
+                    (255, 180, 0), 1, cv2.LINE_AA)
+
+
+def _is_night() -> bool:
+    h = time.localtime().tm_hour
+    if NIGHT_HOUR_START <= NIGHT_HOUR_END:
+        return NIGHT_HOUR_START <= h < NIGHT_HOUR_END
+    return h >= NIGHT_HOUR_START or h < NIGHT_HOUR_END  # wraps midnight
+
+
 def _crop_face(frame, face_rect, pad: int = 25):
     x, y, w, h = face_rect
     h_f, w_f = frame.shape[:2]
@@ -231,7 +293,9 @@ def _worker(api_url: str, api_key: str, cam: Dict[str, Any], stop_event: threadi
     last_stream_at = 0.0
     last_face_detect_at = 0.0
     last_face_saved_at = 0.0
+    last_suspicious_at = 0.0
     last_faces = []
+    last_motion_rects = []
     stream_interval = 1.0 / max(1.0, STREAM_FPS)
     prev_gray = None
     period = 1.0 / max(0.5, MOTION_CHECK_FPS)
@@ -253,6 +317,15 @@ def _worker(api_url: str, api_key: str, cam: Dict[str, Any], stop_event: threadi
                     thresh = cv2.threshold(delta, 25, 255, cv2.THRESH_BINARY)[1]
                     thresh = cv2.dilate(thresh, None, iterations=2)
                     nonzero = int(cv2.countNonZero(thresh))
+
+                    # Extract motion contours for HUD overlay
+                    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                    motion_rects = []
+                    for c in contours:
+                        if cv2.contourArea(c) > 500:
+                            motion_rects.append(cv2.boundingRect(c))
+                    last_motion_rects = motion_rects
+
                     if nonzero > MOTION_AREA_THRESHOLD and (time.time() - last_event_at) > MOTION_COOLDOWN_SEC:
                         last_event_at = time.time()
                         thumb = _encode_thumbnail(frame)
@@ -268,7 +341,11 @@ def _worker(api_url: str, api_key: str, cam: Dict[str, Any], stop_event: threadi
                             print(f"[agent][cam:{name}] motion event reported ({nonzero}px, {severity})")
                         except Exception as e:
                             print(f"[agent][cam:{name}] failed to report event: {e}", file=sys.stderr)
+                else:
+                    last_motion_rects = []
                 prev_gray = gray
+            else:
+                last_motion_rects = []  # noqa: F841 - used later in stream overlay
 
             # Periodic thumbnail upload (panel preview)
             if (time.time() - last_thumb_at) >= THUMB_INTERVAL_SEC:
@@ -312,11 +389,40 @@ def _worker(api_url: str, api_key: str, cam: Dict[str, Any], stop_event: threadi
                         except Exception as e:
                             print(f"[agent][cam:{name}] face event error: {e}", file=sys.stderr)
 
-                # Draw face boxes on a copy then encode (don't pollute motion-detection gray)
+                # SUSPICIOUS detection: night + (face OR significant motion)
+                night = _is_night()
+                suspicious_now = night and (last_faces or len(last_motion_rects) >= 2)
+                if suspicious_now and (time.time() - last_suspicious_at) > SUSPICIOUS_COOLDOWN_SEC:
+                    last_suspicious_at = time.time()
+                    try:
+                        thumb_b64 = _encode_thumbnail(frame)
+                        desc = "Actividad nocturna: " + (
+                            "rostro + movimiento" if last_faces and last_motion_rects
+                            else ("rostro detectado" if last_faces else "movimiento intenso")
+                        )
+                        client.report_event(
+                            api_url, api_key, cam_id,
+                            event_type="suspicious",
+                            severity="high",
+                            description=desc,
+                            thumbnail_b64=thumb_b64,
+                        )
+                        print(f"[agent][cam:{name}] SUSPICIOUS event saved: {desc}")
+                    except Exception as e:
+                        print(f"[agent][cam:{name}] suspicious event error: {e}", file=sys.stderr)
+
+                # Build the display frame with overlays
                 display_frame = frame
-                if last_faces:
+                if HUD_ENABLED or last_faces or last_motion_rects:
                     display_frame = frame.copy()
-                    _draw_faces(display_frame, last_faces)
+                    if last_motion_rects:
+                        _draw_motion_boxes(display_frame, last_motion_rects)
+                    if last_faces:
+                        _draw_faces(display_frame, last_faces)
+                    if HUD_ENABLED:
+                        recent = (time.time() - last_event_at) < 5
+                        susp_active = (time.time() - last_suspicious_at) < 5
+                        _draw_hud(display_frame, name, last_faces, last_motion_rects, recent, susp_active, night)
 
                 jpeg = _encode_stream_jpeg(display_frame)
                 if jpeg:
