@@ -119,9 +119,22 @@ def _worker(api_url: str, api_key: str, cam: Dict[str, Any], stop_event: threadi
         print(f"[agent][cam:{name}] OpenCV not installed; skipping")
         return
 
-    cap = cv2.VideoCapture(usb_idx, cv2.CAP_V4L2)
-    if not cap.isOpened():
-        print(f"[agent][cam:{name}] cannot open /dev/video{usb_idx}", file=sys.stderr)
+    # Try to open /dev/videoN with retries (device may be transiently busy).
+    cap = None
+    for attempt in range(1, 6):
+        cap = cv2.VideoCapture(usb_idx, cv2.CAP_V4L2)
+        if cap.isOpened():
+            break
+        try:
+            cap.release()
+        except Exception:
+            pass
+        cap = None
+        print(f"[agent][cam:{name}] /dev/video{usb_idx} busy, retry {attempt}/5 in 3s", file=sys.stderr)
+        if stop_event.wait(3):
+            return
+    if cap is None or not cap.isOpened():
+        print(f"[agent][cam:{name}] cannot open /dev/video{usb_idx} after retries", file=sys.stderr)
         return
 
     # Configure capture for low CPU usage (critical on Pi 3B+).
