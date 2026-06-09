@@ -33,8 +33,37 @@ CAM_FOURCC = os.environ.get("SMARTCAM_CAM_FOURCC", "MJPG")
 
 
 # ---------------- USB camera scan ----------------
+# V4L2 capability flag for video capture devices
+_V4L2_CAP_VIDEO_CAPTURE = 0x00000001
+
+
+def _is_capture_device(idx: int) -> bool:
+    """Return True if /dev/video<idx> declares V4L2 video-capture capability."""
+    path = f"/sys/class/video4linux/video{idx}/device_caps"
+    try:
+        with open(path) as f:
+            caps = int(f.read().strip(), 16)
+        return bool(caps & _V4L2_CAP_VIDEO_CAPTURE)
+    except (OSError, ValueError):
+        pass
+    # Fallback to capabilities
+    path = f"/sys/class/video4linux/video{idx}/capabilities"
+    try:
+        with open(path) as f:
+            caps = int(f.read().strip(), 16)
+        return bool(caps & _V4L2_CAP_VIDEO_CAPTURE)
+    except (OSError, ValueError):
+        return True  # if can't tell, don't filter out
+
+
 def scan_usb_cameras() -> List[Dict[str, Any]]:
-    """Return list of available /dev/video* cameras with basic info."""
+    """Return list of REAL capture cameras under /dev/video*.
+
+    Filters out the Raspberry Pi's internal bcm2835 codec / ISP nodes and any
+    nodes that don't declare V4L2 video-capture capability. Does NOT open the
+    device via OpenCV (that's slow and noisy when probed against non-capture
+    nodes). Resolution/format info will be filled by the per-camera worker.
+    """
     nodes = sorted(glob.glob("/dev/video*"))
     cams: List[Dict[str, Any]] = []
     for node in nodes:
@@ -42,15 +71,15 @@ def scan_usb_cameras() -> List[Dict[str, Any]]:
         if not m:
             continue
         idx = int(m.group(1))
-        info: Dict[str, Any] = {"usb_index": idx, "name": _v4l2_name(idx)}
-        # Try to open quickly to read native resolution
-        if cv2 is not None:
-            cap = cv2.VideoCapture(idx)
-            if cap.isOpened():
-                info["width"] = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0) or None
-                info["height"] = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0) or None
-                cap.release()
-        cams.append(info)
+        name = _v4l2_name(idx) or ""
+        # Skip Pi's internal video nodes (codec, ISP, decoder)
+        low = name.lower()
+        if any(tag in low for tag in ("bcm2835", "rpi-", "isp", "codec", "decode")):
+            continue
+        # Skip non-capture devices (e.g. /dev/video1 metadata stream)
+        if not _is_capture_device(idx):
+            continue
+        cams.append({"usb_index": idx, "name": name or f"video{idx}"})
     return cams
 
 
@@ -90,7 +119,7 @@ def _worker(api_url: str, api_key: str, cam: Dict[str, Any], stop_event: threadi
         print(f"[agent][cam:{name}] OpenCV not installed; skipping")
         return
 
-    cap = cv2.VideoCapture(usb_idx)
+    cap = cv2.VideoCapture(usb_idx, cv2.CAP_V4L2)
     if not cap.isOpened():
         print(f"[agent][cam:{name}] cannot open /dev/video{usb_idx}", file=sys.stderr)
         return
