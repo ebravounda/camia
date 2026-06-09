@@ -117,7 +117,7 @@ export default function Devices() {
             <DialogHeader>
               <DialogTitle className="font-display">Registrar Raspberry Pi</DialogTitle>
               <DialogDescription className="text-gray-400">
-                Recibirás un token de emparejamiento de 12 caracteres.
+                Recibirás un token de emparejamiento de 14 caracteres (formato XXXX-XXXX-XXXX).
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={create} className="space-y-4">
