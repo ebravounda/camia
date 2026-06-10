@@ -19,7 +19,7 @@ from . import client
 
 
 THUMB_INTERVAL_SEC = int(os.environ.get("SMARTCAM_THUMB_INTERVAL", "300"))  # 5 min
-MOTION_CHECK_FPS = float(os.environ.get("SMARTCAM_MOTION_FPS", "4"))
+MOTION_CHECK_FPS = float(os.environ.get("SMARTCAM_MOTION_FPS", "3"))
 MOTION_AREA_THRESHOLD = int(os.environ.get("SMARTCAM_MOTION_AREA", "1500"))  # pixels
 MOTION_COOLDOWN_SEC = int(os.environ.get("SMARTCAM_MOTION_COOLDOWN", "30"))
 THUMB_MAX_WIDTH = 480
@@ -31,9 +31,9 @@ AI_JPEG_QUALITY = int(os.environ.get("SMARTCAM_AI_QUALITY", "70"))
 AI_MAX_WIDTH = int(os.environ.get("SMARTCAM_AI_MAX_WIDTH", "480"))
 
 # Live streaming defaults (low for Pi 3B+, can be raised on Pi 4/5).
-STREAM_FPS = float(os.environ.get("SMARTCAM_STREAM_FPS", "10"))
+STREAM_FPS = float(os.environ.get("SMARTCAM_STREAM_FPS", "15"))
 STREAM_MAX_WIDTH = int(os.environ.get("SMARTCAM_STREAM_MAX_WIDTH", "640"))
-STREAM_JPEG_QUALITY = int(os.environ.get("SMARTCAM_STREAM_QUALITY", "65"))
+STREAM_JPEG_QUALITY = int(os.environ.get("SMARTCAM_STREAM_QUALITY", "70"))
 STREAM_ENABLED = os.environ.get("SMARTCAM_STREAM", "1") not in ("0", "false", "no")
 HUD_ENABLED = os.environ.get("SMARTCAM_HUD", "1") not in ("0", "false", "no")
 
@@ -165,8 +165,10 @@ def _draw_ai_detections(frame, detections, scale_x=1.0, scale_y=1.0) -> None:
     for d in detections:
         label = d.get("label", "?")
         color = _AI_COLORS.get(label, (0, 220, 220))
-        x = int(d["x"] * scale_x); y = int(d["y"] * scale_y)
-        w = int(d["w"] * scale_x); h = int(d["h"] * scale_y)
+        x = int(d["x"] * scale_x)
+        y = int(d["y"] * scale_y)
+        w = int(d["w"] * scale_x)
+        h = int(d["h"] * scale_y)
         cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
         text = f"{d.get('label_es', label).upper()} {int(d.get('confidence', 0) * 100)}%"
         (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
@@ -364,17 +366,20 @@ def _worker(api_url: str, api_key: str, cam: Dict[str, Any], stop_event: threadi
     last_thumb_at = 0.0
     last_event_at = 0.0
     last_stream_at = 0.0
+    last_motion_at = 0.0
     last_face_detect_at = 0.0
     last_face_saved_at = 0.0
     last_suspicious_at = 0.0
     last_ai_at = 0.0
     last_ai_detections = []
-    last_ai_frame_size = None  # (w, h) of the frame sent to AI
+    last_ai_frame_size = None
     last_faces = []
     last_motion_rects = []
     stream_interval = 1.0 / max(1.0, STREAM_FPS)
+    motion_interval = 1.0 / max(0.5, MOTION_CHECK_FPS)
     prev_gray = None
-    period = 1.0 / max(0.5, MOTION_CHECK_FPS)
+    # Loop tick = a bit faster than the highest consumer (stream)
+    loop_period = max(0.02, stream_interval * 0.75)
 
     try:
         while not stop_event.is_set():
@@ -384,8 +389,9 @@ def _worker(api_url: str, api_key: str, cam: Dict[str, Any], stop_event: threadi
                 time.sleep(0.5)
                 continue
 
-            # Motion detection (only if enabled on cam)
-            if cam.get("enabled", True):
+            # Motion detection (rate-limited, decoupled from stream)
+            if cam.get("enabled", True) and (time.time() - last_motion_at) >= motion_interval:
+                last_motion_at = time.time()
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 gray = cv2.GaussianBlur(gray, (21, 21), 0)
                 if prev_gray is not None:
@@ -534,8 +540,8 @@ def _worker(api_url: str, api_key: str, cam: Dict[str, Any], stop_event: threadi
 
             # frame pacing
             elapsed = time.time() - t0
-            if elapsed < period:
-                time.sleep(period - elapsed)
+            if elapsed < loop_period:
+                time.sleep(loop_period - elapsed)
     finally:
         cap.release()
         print(f"[agent][cam:{name}] worker stopped")
