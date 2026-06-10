@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   LayoutDashboard, Cctv, Cpu, AlertTriangle, CreditCard, Settings,
-  Shield, LogOut, Cog, ScanFace,
+  Shield, LogOut, ScanFace,
 } from "lucide-react";
 
 const nav = [
@@ -15,7 +15,7 @@ const nav = [
   { to: "/settings", label: "Configuración", icon: Settings, testid: "nav-settings" },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ onNavigate }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
@@ -27,7 +27,7 @@ export default function Sidebar() {
   return (
     <aside
       data-testid="app-sidebar"
-      className="hidden md:flex flex-col w-64 shrink-0 border-r border-white/10 bg-[#0E1017] min-h-screen sticky top-0"
+      className="flex flex-col w-64 shrink-0 border-r border-white/10 bg-[#0E1017] min-h-screen"
     >
       <div className="px-6 py-6 border-b border-white/10">
         <div className="flex items-center gap-2.5">
@@ -41,14 +41,15 @@ export default function Sidebar() {
         </div>
       </div>
 
-      <nav className="flex-1 px-3 py-5 space-y-1">
+      <nav className="flex-1 px-3 py-5 space-y-1 overflow-y-auto">
         {nav.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
+            onClick={onNavigate}
             data-testid={item.testid}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors group ${
+              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
                 isActive
                   ? "bg-blue-500/10 text-blue-400 border-l-2 border-blue-500"
                   : "text-gray-400 hover:text-white hover:bg-white/5 border-l-2 border-transparent"
@@ -67,6 +68,7 @@ export default function Sidebar() {
             </div>
             <NavLink
               to="/admin"
+              onClick={onNavigate}
               data-testid="nav-admin"
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${

@@ -75,8 +75,21 @@ export default function CameraLive() {
         // ignore decode errors
       }
     };
-    ws.onerror = () => setError("WebSocket falló. Cae a HTTP MJPEG (recarga la página).");
-    ws.onclose = () => { wsRef.current = null; };
+    ws.onerror = () => {
+      // Only show error if no frames received yet
+      if (fpsTickRef.current.count === 0 && frameCount === 0) {
+        console.warn("WebSocket error — will try to reconnect");
+      }
+    };
+    ws.onclose = () => {
+      wsRef.current = null;
+      // Auto-reconnect after 2s if still playing
+      if (playing) {
+        setTimeout(() => {
+          if (playing && !wsRef.current) reload();
+        }, 2000);
+      }
+    };
 
     // Heartbeat to detect dead connection
     const ping = setInterval(() => {
@@ -164,7 +177,7 @@ export default function CameraLive() {
           {/* Cinema-style player */}
           <div
             ref={containerRef}
-            className="relative aspect-video bg-black rounded-2xl border border-white/10 overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.6)]"
+            className="relative aspect-video bg-black rounded-xl sm:rounded-2xl border border-white/10 overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.6)]"
             data-testid="player-container"
           >
             {playing ? (
@@ -180,54 +193,55 @@ export default function CameraLive() {
             )}
 
             {/* Top HUD bar */}
-            <div className="absolute top-0 left-0 right-0 px-4 py-3 flex items-center justify-between bg-gradient-to-b from-black/70 to-transparent pointer-events-none">
-              <div className="flex items-center gap-2 px-2.5 py-1 rounded-md bg-black/60 border border-white/10 text-[11px] font-mono uppercase tracking-widest text-red-400 backdrop-blur-md">
+            <div className="absolute top-0 left-0 right-0 px-2 sm:px-4 py-2 sm:py-3 flex items-center justify-between bg-gradient-to-b from-black/70 to-transparent pointer-events-none">
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-black/60 border border-white/10 text-[10px] sm:text-[11px] font-mono uppercase tracking-widest text-red-400 backdrop-blur-md">
                 <span className={`w-1.5 h-1.5 rounded-full ${playing ? "bg-red-500 live-dot" : "bg-gray-500"}`} />
                 {playing ? "LIVE" : "PAUSADO"}
               </div>
-              <div className="flex items-center gap-2 px-2.5 py-1 rounded-md bg-black/60 border border-white/10 text-[10px] font-mono uppercase tracking-widest text-gray-300 backdrop-blur-md">
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-black/60 border border-white/10 text-[10px] font-mono uppercase tracking-widest text-gray-300 backdrop-blur-md">
                 <Activity className="w-3 h-3 text-blue-400" />
-                {fps.toFixed(1)} fps · {frameCount} frames · WS
+                <span className="hidden sm:inline">{fps.toFixed(1)} fps · {frameCount} frames · WS</span>
+                <span className="sm:hidden">{fps.toFixed(0)} fps</span>
               </div>
             </div>
 
             {/* Bottom HUD bar */}
-            <div className="absolute bottom-0 left-0 right-0 px-4 py-3 flex items-center justify-between bg-gradient-to-t from-black/70 to-transparent">
-              <div className="px-2.5 py-1 rounded-md bg-black/60 border border-white/10 text-[11px] font-mono backdrop-blur-md">
+            <div className="absolute bottom-0 left-0 right-0 px-2 sm:px-4 py-2 sm:py-3 flex items-center justify-between bg-gradient-to-t from-black/70 to-transparent">
+              <div className="px-2 py-1 rounded-md bg-black/60 border border-white/10 text-[10px] sm:text-[11px] font-mono backdrop-blur-md truncate max-w-[40%]">
                 {camera?.name || "—"}
               </div>
-              <div className="flex items-center gap-1.5 pointer-events-auto">
+              <div className="flex items-center gap-1 sm:gap-1.5 pointer-events-auto">
                 <button
                   onClick={() => setPlaying((p) => !p)}
-                  className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/15 flex items-center justify-center transition-colors"
+                  className="w-11 h-11 sm:w-9 sm:h-9 rounded-full bg-white/10 active:bg-white/30 hover:bg-white/20 backdrop-blur-md border border-white/15 flex items-center justify-center transition-colors"
                   title={playing ? "Pausar" : "Reanudar"}
                   data-testid="player-play-pause"
                 >
-                  {playing ? <Pause className="w-4 h-4 text-white" /> : <Play className="w-4 h-4 text-white" />}
+                  {playing ? <Pause className="w-5 h-5 sm:w-4 sm:h-4 text-white" /> : <Play className="w-5 h-5 sm:w-4 sm:h-4 text-white" />}
                 </button>
                 <button
                   onClick={reload}
-                  className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/15 flex items-center justify-center transition-colors"
+                  className="w-11 h-11 sm:w-9 sm:h-9 rounded-full bg-white/10 active:bg-white/30 hover:bg-white/20 backdrop-blur-md border border-white/15 flex items-center justify-center transition-colors"
                   title="Reconectar"
                   data-testid="player-reload"
                 >
-                  <RefreshCcw className="w-4 h-4 text-white" />
+                  <RefreshCcw className="w-5 h-5 sm:w-4 sm:h-4 text-white" />
                 </button>
                 <button
                   onClick={takeSnapshot}
-                  className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/15 flex items-center justify-center transition-colors"
+                  className="w-11 h-11 sm:w-9 sm:h-9 rounded-full bg-white/10 active:bg-white/30 hover:bg-white/20 backdrop-blur-md border border-white/15 flex items-center justify-center transition-colors"
                   title="Capturar foto"
                   data-testid="player-snapshot"
                 >
-                  <CameraIcon className="w-4 h-4 text-white" />
+                  <CameraIcon className="w-5 h-5 sm:w-4 sm:h-4 text-white" />
                 </button>
                 <button
                   onClick={goFullscreen}
-                  className="w-9 h-9 rounded-full bg-blue-600 hover:bg-blue-700 border border-blue-500 flex items-center justify-center transition-colors shadow-[0_0_14px_rgba(37,99,235,0.45)]"
+                  className="w-11 h-11 sm:w-9 sm:h-9 rounded-full bg-blue-600 active:bg-blue-800 hover:bg-blue-700 border border-blue-500 flex items-center justify-center transition-colors shadow-[0_0_14px_rgba(37,99,235,0.45)]"
                   title="Pantalla completa"
                   data-testid="player-fullscreen"
                 >
-                  <Maximize2 className="w-4 h-4 text-white" />
+                  <Maximize2 className="w-5 h-5 sm:w-4 sm:h-4 text-white" />
                 </button>
               </div>
             </div>
