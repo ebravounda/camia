@@ -40,6 +40,18 @@ STREAM_ENABLED = os.environ.get("SMARTCAM_STREAM", "1") not in ("0", "false", "n
 # adds CPU. The browser draws its own clean overlays on top of clean frames).
 HUD_ENABLED = os.environ.get("SMARTCAM_HUD", "0") not in ("0", "false", "no")
 
+# Suspicious behaviour thresholds (Pack "Essential Security")
+# 1) Loitering: same person(s) in frame for > N seconds
+LOITERING_SECONDS = int(os.environ.get("SMARTCAM_LOITERING_SEC", "60"))
+LOITERING_COOLDOWN = int(os.environ.get("SMARTCAM_LOITERING_COOLDOWN", "180"))
+# 2) Crowd: this many simultaneous persons triggers an event
+CROWD_PERSONS = int(os.environ.get("SMARTCAM_CROWD_PERSONS", "3"))
+CROWD_COOLDOWN = int(os.environ.get("SMARTCAM_CROWD_COOLDOWN", "120"))
+# 3) Rapid motion: current motion area exceeds median(last N) by this factor
+RAPID_MOTION_FACTOR = float(os.environ.get("SMARTCAM_RAPID_FACTOR", "5.0"))
+RAPID_MOTION_MIN_AREA = int(os.environ.get("SMARTCAM_RAPID_MIN_AREA", "5000"))
+RAPID_MOTION_COOLDOWN = int(os.environ.get("SMARTCAM_RAPID_COOLDOWN", "30"))
+
 # Suspicious behaviour rules
 NIGHT_HOUR_START = int(os.environ.get("SMARTCAM_NIGHT_START", "22"))  # 22:00
 NIGHT_HOUR_END = int(os.environ.get("SMARTCAM_NIGHT_END", "6"))      # 06:00
@@ -396,6 +408,18 @@ def _worker(api_url: str, api_key: str, cam: Dict[str, Any], stop_event: threadi
     _ai_inflight = [False]  # list-as-cell so closure can mutate
     last_faces = []
     last_motion_rects = []
+    # ── Pack "Essential Security" state ──
+    # Loitering: when the FIRST person appeared in this continuous sighting.
+    # We reset it after `loitering_grace_sec` of no-person frames.
+    loitering_first_person_at = None
+    loitering_last_seen_at = 0.0
+    loitering_grace_sec = 5.0
+    last_loitering_event_at = 0.0
+    # Crowd: cooldown only (count is checked each AI cycle)
+    last_crowd_event_at = 0.0
+    # Rapid motion: rolling history of motion areas
+    motion_history = []  # list of recent nonzero pixel counts (max 12)
+    last_rapid_motion_at = 0.0
     stream_interval = 1.0 / max(1.0, STREAM_FPS)
     motion_interval = 1.0 / max(0.5, MOTION_CHECK_FPS)
     prev_gray = None
@@ -444,6 +468,31 @@ def _worker(api_url: str, api_key: str, cam: Dict[str, Any], stop_event: threadi
                             print(f"[agent][cam:{name}] motion event reported ({nonzero}px, {severity})")
                         except Exception as e:
                             print(f"[agent][cam:{name}] failed to report event: {e}", file=sys.stderr)
+
+                    # ── Pack "Essential Security": Rapid Motion ──
+                    # Compare current motion area against the median of recent
+                    # samples. A sudden spike → forcejeo, carrera, caída.
+                    motion_history.append(nonzero)
+                    if len(motion_history) > 12:
+                        motion_history.pop(0)
+                    if len(motion_history) >= 6 and nonzero >= RAPID_MOTION_MIN_AREA:
+                        # median of recent excluding current
+                        prev_samples = sorted(motion_history[:-1])
+                        med = prev_samples[len(prev_samples) // 2]
+                        if med > 0 and nonzero >= med * RAPID_MOTION_FACTOR and \
+                           (time.time() - last_rapid_motion_at) >= RAPID_MOTION_COOLDOWN:
+                            last_rapid_motion_at = time.time()
+                            try:
+                                client.report_event(
+                                    api_url, api_key, cam_id,
+                                    event_type="rapid_motion",
+                                    severity="high",
+                                    description=f"Movimiento rápido detectado ({nonzero}px, {nonzero/max(1,med):.1f}× media)",
+                                    thumbnail_b64=_encode_thumbnail(frame),
+                                )
+                                print(f"[agent][cam:{name}] rapid_motion event ({nonzero}px, {nonzero/max(1,med):.1f}x)")
+                            except Exception as e:
+                                print(f"[agent][cam:{name}] rapid_motion report failed: {e}", file=sys.stderr)
                 else:
                     last_motion_rects = []
                 prev_gray = gray
@@ -562,6 +611,56 @@ def _worker(api_url: str, api_key: str, cam: Dict[str, Any], stop_event: threadi
 
                 last_ai_detections = _ai_state["detections"]
                 last_ai_frame_size = _ai_state["frame_size"]
+
+                # ── Pack "Essential Security": Crowd + Loitering ──
+                if last_ai_detections:
+                    persons = [
+                        d for d in last_ai_detections
+                        if (d.get("label") or "").lower() in ("person", "persona")
+                    ]
+                    n_persons = len(persons)
+                    now = time.time()
+
+                    # CROWD: ≥ N personas simultáneas → evento
+                    if n_persons >= CROWD_PERSONS and (now - last_crowd_event_at) >= CROWD_COOLDOWN:
+                        last_crowd_event_at = now
+                        try:
+                            client.report_event(
+                                api_url, api_key, cam_id,
+                                event_type="crowd",
+                                severity="medium",
+                                description=f"Multitud detectada: {n_persons} personas",
+                                thumbnail_b64=_encode_thumbnail(frame),
+                            )
+                            print(f"[agent][cam:{name}] crowd event ({n_persons} persons)")
+                        except Exception as e:
+                            print(f"[agent][cam:{name}] crowd report failed: {e}", file=sys.stderr)
+
+                    # LOITERING: persona(s) presentes continuamente > N segundos
+                    if n_persons > 0:
+                        loitering_last_seen_at = now
+                        if loitering_first_person_at is None:
+                            loitering_first_person_at = now
+                        else:
+                            duration = now - loitering_first_person_at
+                            if duration >= LOITERING_SECONDS and \
+                               (now - last_loitering_event_at) >= LOITERING_COOLDOWN:
+                                last_loitering_event_at = now
+                                try:
+                                    client.report_event(
+                                        api_url, api_key, cam_id,
+                                        event_type="loitering",
+                                        severity="medium",
+                                        description=f"Merodeo: persona en frame {int(duration)}s",
+                                        thumbnail_b64=_encode_thumbnail(frame),
+                                    )
+                                    print(f"[agent][cam:{name}] loitering event ({int(duration)}s)")
+                                except Exception as e:
+                                    print(f"[agent][cam:{name}] loitering report failed: {e}", file=sys.stderr)
+                # Reset loitering timer if no person seen for `grace_sec`
+                if loitering_first_person_at is not None and \
+                   (time.time() - loitering_last_seen_at) > loitering_grace_sec:
+                    loitering_first_person_at = None
 
                 # Build the display frame. With HUD off (now the default) and
                 # nothing to draw, we skip the frame.copy() entirely — huge

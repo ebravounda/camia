@@ -306,6 +306,12 @@ async def upload_audio(
         await broadcast_audio(x_camera_id, body)
     except Exception:
         pass
+    # Suspicious behaviour: emit a loud_audio event when RMS exceeds threshold
+    try:
+        from suspicious import maybe_emit_loud_audio_event
+        await maybe_emit_loud_audio_event(db, x_camera_id, cam["user_id"], body)
+    except Exception:
+        pass
     return {"ok": True, "size": len(body)}
 
 

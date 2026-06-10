@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import AppShell from "@/components/AppShell";
 import api from "@/lib/api";
-import { AlertTriangle, Filter, User, Car, Dog, Activity, ShieldAlert, EyeOff, Film } from "lucide-react";
+import { AlertTriangle, Filter, User, Car, Dog, Activity, ShieldAlert, EyeOff, Film, Users, Mic, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
@@ -17,6 +17,11 @@ const TYPE_META = {
   vehicle: { icon: Car, color: "text-sky-300 bg-sky-500/10 border-sky-400/30", label: "Vehículo" },
   motion: { icon: Activity, color: "text-gray-300 bg-white/5 border-white/15", label: "Movimiento" },
   suspicious: { icon: ShieldAlert, color: "text-red-400 bg-red-500/10 border-red-500/30", label: "Sospechoso" },
+  // ── Pack "Essential Security" ──
+  loitering: { icon: User, color: "text-orange-400 bg-orange-500/10 border-orange-500/30", label: "Merodeo" },
+  crowd: { icon: Users, color: "text-fuchsia-400 bg-fuchsia-500/10 border-fuchsia-500/30", label: "Multitud" },
+  loud_audio: { icon: Mic, color: "text-rose-400 bg-rose-500/10 border-rose-500/30", label: "Ruido fuerte" },
+  rapid_motion: { icon: Zap, color: "text-red-400 bg-red-500/10 border-red-500/30", label: "Mov. rápido" },
 };
 
 const fadeUp = {
@@ -55,7 +60,7 @@ export default function Events() {
         <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-widest text-gray-500 mr-2">
           <Filter className="w-3 h-3" /> Filtrar
         </div>
-        {["", "person", "unknown_face", "suspicious", "animal", "vehicle", "motion"].map((t) => (
+        {["", "person", "loitering", "crowd", "loud_audio", "rapid_motion", "unknown_face", "suspicious", "motion"].map((t) => (
           <Button
             key={t || "all"}
             data-testid={`event-filter-${t || "all"}`}
