@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from models import utcnow, new_id
 from auth import get_current_user
 from streaming_hub import set_frame as stream_set_frame
+import ai_service
 
 
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -263,6 +264,81 @@ async def upload_frame(
         raise HTTPException(status_code=413, detail="Frame demasiado grande")
     stream_set_frame(x_camera_id, body)
     return {"ok": True, "size": len(body)}
+
+
+# ---------- Backend AI analysis (YOLOv8n) ----------
+@router.post("/analyze")
+async def analyze_frame(
+    request: Request,
+    x_camera_id: str = Header(..., alias="X-Camera-Id"),
+    device: dict = Depends(get_current_agent),
+):
+    """Agent sends a JPEG; backend runs YOLOv8 and returns object detections.
+
+    Response shape:
+        {
+          "detections": [
+             {"label": "person", "label_es": "Persona", "confidence": 0.87, "x": 120, "y": 50, "w": 80, "h": 200},
+             ...
+          ]
+        }
+    """
+    from server import db
+    cam = await db.cameras.find_one(
+        {"id": x_camera_id, "device_id": device["id"]}, {"_id": 0}
+    )
+    if not cam:
+        raise HTTPException(status_code=404, detail="Cámara no asignada")
+    body = await request.body()
+    if not body:
+        raise HTTPException(status_code=400, detail="Frame vacío")
+    if len(body) > 1_000_000:  # 1MB max for analysis frames
+        raise HTTPException(status_code=413, detail="Frame demasiado grande")
+    try:
+        detections = await ai_service.analyze_jpeg(body, conf=0.35)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"YOLO error: {e}")
+
+    # Enrich with Spanish labels
+    for d in detections:
+        d["label_es"] = ai_service.LABEL_ES.get(d["label"], d["label"].capitalize())
+
+    # Auto-report significant objects as events (persons + suspicious objects), rate-limited per camera
+    interesting = [d for d in detections if d["label"] in ("person", "car", "motorcycle", "truck", "dog", "cat")]
+    if interesting:
+        # Save a single event with all interesting detections
+        top = max(interesting, key=lambda d: d["confidence"])
+        # Only emit if confidence is decent
+        if top["confidence"] >= 0.5:
+            # Throttle: skip if last AI event < 60s ago for this camera
+            from streaming_hub import LIVE_FRAMES  # reuse import
+            now_ts = utcnow().isoformat()
+            recent_cutoff = (utcnow() - timedelta(seconds=60)).isoformat()
+            recent = await db.events.find_one(
+                {"camera_id": x_camera_id, "event_type": "person" if top["label"] == "person" else "vehicle" if top["label"] in ("car", "motorcycle", "truck") else "animal",
+                 "created_at": {"$gte": recent_cutoff}},
+                {"_id": 0, "id": 1},
+            )
+            if not recent:
+                # Crop the top detection from the JPEG for thumbnail
+                ev_type = "person" if top["label"] == "person" else ("vehicle" if top["label"] in ("car", "motorcycle", "truck") else "animal")
+                names_es = ", ".join(sorted({ai_service.LABEL_ES.get(d["label"], d["label"]) for d in interesting}))
+                event_doc = {
+                    "id": new_id(),
+                    "user_id": device["user_id"],
+                    "device_id": device["id"],
+                    "camera_id": x_camera_id,
+                    "camera_name": cam.get("name"),
+                    "event_type": ev_type,
+                    "severity": "medium" if top["label"] == "person" else "low",
+                    "description": f"IA: {names_es} ({int(top['confidence']*100)}%)",
+                    "thumbnail_url": "data:image/jpeg;base64," + base64.b64encode(body).decode("ascii"),
+                    "clip_url": None,
+                    "created_at": now_ts,
+                }
+                await db.events.insert_one(event_doc)
+
+    return {"detections": detections}
 
 
 # ---------- Background task: mark devices offline if no heartbeat ----------

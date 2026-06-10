@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   LayoutDashboard, Cctv, Cpu, AlertTriangle, CreditCard, Settings,
-  Shield, LogOut, Cog,
+  Shield, LogOut, Cog, ScanFace,
 } from "lucide-react";
 
 const nav = [
@@ -10,6 +10,7 @@ const nav = [
   { to: "/cameras", label: "Cámaras", icon: Cctv, testid: "nav-cameras" },
   { to: "/devices", label: "Raspberry Pi", icon: Cpu, testid: "nav-devices" },
   { to: "/events", label: "Eventos", icon: AlertTriangle, testid: "nav-events" },
+  { to: "/faces", label: "Caras", icon: ScanFace, testid: "nav-faces" },
   { to: "/pricing", label: "Planes", icon: CreditCard, testid: "nav-pricing" },
   { to: "/settings", label: "Configuración", icon: Settings, testid: "nav-settings" },
 ];

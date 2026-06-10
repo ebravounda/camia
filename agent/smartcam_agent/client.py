@@ -101,6 +101,24 @@ def upload_live_frame(api_url: str, api_key: str, camera_id: str, jpeg_bytes: by
     r.raise_for_status()
 
 
+def analyze_frame(api_url: str, api_key: str, camera_id: str, jpeg_bytes: bytes) -> list:
+    """POST a JPEG to backend for YOLO analysis; returns list of detections."""
+    session = _get_stream_session()
+    headers = {
+        "Authorization": f"Agent {api_key}",
+        "Content-Type": "image/jpeg",
+        "X-Camera-Id": camera_id,
+    }
+    r = session.post(
+        f"{api_url.rstrip('/')}/agent/analyze",
+        data=jpeg_bytes,
+        headers=headers,
+        timeout=20,
+    )
+    r.raise_for_status()
+    return r.json().get("detections", [])
+
+
 def report_event(api_url: str, api_key: str, camera_id: str, event_type: str = "motion",
                  severity: str = "low", description: Optional[str] = None,
                  thumbnail_b64: Optional[str] = None) -> None:

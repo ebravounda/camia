@@ -53,6 +53,10 @@ function AppRouter() {
         element={<ProtectedRoute><Events /></ProtectedRoute>}
       />
       <Route
+        path="/faces"
+        element={<ProtectedRoute><Faces /></ProtectedRoute>}
+      />
+      <Route
         path="/settings"
         element={<ProtectedRoute><Settings /></ProtectedRoute>}
       />

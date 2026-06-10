@@ -24,6 +24,12 @@ MOTION_AREA_THRESHOLD = int(os.environ.get("SMARTCAM_MOTION_AREA", "1500"))  # p
 MOTION_COOLDOWN_SEC = int(os.environ.get("SMARTCAM_MOTION_COOLDOWN", "30"))
 THUMB_MAX_WIDTH = 480
 
+# Backend AI analysis (YOLO on server)
+AI_ENABLED = os.environ.get("SMARTCAM_AI", "1") not in ("0", "false", "no")
+AI_INTERVAL = float(os.environ.get("SMARTCAM_AI_INTERVAL", "2.5"))  # seconds between analyses
+AI_JPEG_QUALITY = int(os.environ.get("SMARTCAM_AI_QUALITY", "70"))
+AI_MAX_WIDTH = int(os.environ.get("SMARTCAM_AI_MAX_WIDTH", "480"))
+
 # Live streaming defaults (low for Pi 3B+, can be raised on Pi 4/5).
 STREAM_FPS = float(os.environ.get("SMARTCAM_STREAM_FPS", "10"))
 STREAM_MAX_WIDTH = int(os.environ.get("SMARTCAM_STREAM_MAX_WIDTH", "640"))
@@ -131,6 +137,41 @@ def _encode_stream_jpeg(frame) -> Optional[bytes]:
     if not ok:
         return None
     return buf.tobytes()
+
+
+def _encode_ai_jpeg(frame) -> Optional[bytes]:
+    if cv2 is None or frame is None:
+        return None
+    h, w = frame.shape[:2]
+    if w > AI_MAX_WIDTH:
+        scale = AI_MAX_WIDTH / float(w)
+        frame = cv2.resize(frame, (AI_MAX_WIDTH, int(h * scale)))
+    ok, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), AI_JPEG_QUALITY])
+    if not ok:
+        return None
+    return buf.tobytes()
+
+
+# Color per class for boxes (BGR)
+_AI_COLORS = {
+    "person": (0, 255, 0), "car": (255, 100, 0), "motorcycle": (255, 100, 100),
+    "truck": (255, 50, 50), "bus": (255, 50, 0), "bicycle": (200, 200, 0),
+    "dog": (0, 200, 255), "cat": (180, 0, 255), "bird": (255, 200, 100),
+}
+
+
+def _draw_ai_detections(frame, detections, scale_x=1.0, scale_y=1.0) -> None:
+    """Draw labeled boxes for backend YOLO detections."""
+    for d in detections:
+        label = d.get("label", "?")
+        color = _AI_COLORS.get(label, (0, 220, 220))
+        x = int(d["x"] * scale_x); y = int(d["y"] * scale_y)
+        w = int(d["w"] * scale_x); h = int(d["h"] * scale_y)
+        cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
+        text = f"{d.get('label_es', label).upper()} {int(d.get('confidence', 0) * 100)}%"
+        (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+        cv2.rectangle(frame, (x, y - th - 8), (x + tw + 8, y), color, -1)
+        cv2.putText(frame, text, (x + 4, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
 
 
 # ---------------- Face detection (Haar cascade, fast on Pi 3B+) ----------------
@@ -294,6 +335,9 @@ def _worker(api_url: str, api_key: str, cam: Dict[str, Any], stop_event: threadi
     last_face_detect_at = 0.0
     last_face_saved_at = 0.0
     last_suspicious_at = 0.0
+    last_ai_at = 0.0
+    last_ai_detections = []
+    last_ai_frame_size = None  # (w, h) of the frame sent to AI
     last_faces = []
     last_motion_rects = []
     stream_interval = 1.0 / max(1.0, STREAM_FPS)
@@ -411,12 +455,36 @@ def _worker(api_url: str, api_key: str, cam: Dict[str, Any], stop_event: threadi
                     except Exception as e:
                         print(f"[agent][cam:{name}] suspicious event error: {e}", file=sys.stderr)
 
+                # Backend AI analysis (YOLO on server) - throttled
+                if AI_ENABLED and (time.time() - last_ai_at) >= AI_INTERVAL:
+                    last_ai_at = time.time()
+                    ai_jpeg = _encode_ai_jpeg(frame)
+                    if ai_jpeg:
+                        try:
+                            last_ai_detections = client.analyze_frame(api_url, api_key, cam_id, ai_jpeg)
+                            # Track the size we sent so we can scale boxes back
+                            h_orig, w_orig = frame.shape[:2]
+                            scale = AI_MAX_WIDTH / float(w_orig) if w_orig > AI_MAX_WIDTH else 1.0
+                            last_ai_frame_size = (int(w_orig * scale), int(h_orig * scale))
+                            if last_ai_detections:
+                                labels = ", ".join(sorted({d.get("label_es", d["label"]) for d in last_ai_detections}))
+                                print(f"[agent][cam:{name}] AI detected: {labels}")
+                        except Exception as e:
+                            if int(time.time()) % 30 == 0:
+                                print(f"[agent][cam:{name}] AI analyze error: {e}", file=sys.stderr)
+
                 # Build the display frame with overlays
                 display_frame = frame
-                if HUD_ENABLED or last_faces or last_motion_rects:
+                if HUD_ENABLED or last_faces or last_motion_rects or last_ai_detections:
                     display_frame = frame.copy()
                     if last_motion_rects:
                         _draw_motion_boxes(display_frame, last_motion_rects)
+                    # Draw AI detections (scale boxes from AI frame back to current frame)
+                    if last_ai_detections and last_ai_frame_size:
+                        h_cur, w_cur = display_frame.shape[:2]
+                        sx = w_cur / float(last_ai_frame_size[0]) if last_ai_frame_size[0] else 1.0
+                        sy = h_cur / float(last_ai_frame_size[1]) if last_ai_frame_size[1] else 1.0
+                        _draw_ai_detections(display_frame, last_ai_detections, sx, sy)
                     if last_faces:
                         _draw_faces(display_frame, last_faces)
                     if HUD_ENABLED:
