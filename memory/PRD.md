@@ -66,30 +66,45 @@ Componentes:
 - [x] Frontend Dashboard: LiveTile usa last_thumbnail de cámaras reales + polling cada 30s
 - [x] 57 backend tests pytest pasando (Fase 1 + Fase 2)
 
-## Phase 3 - Streaming en vivo (1-4 cámaras)
-- [ ] WebRTC con aiortc o MJPEG sobre WebSocket
-- [ ] LiveTile component conecta al stream del agente
+## Phase 3 - Streaming en vivo (1-4 cámaras) — Implemented (2026-02)
+- [x] WebSocket binary frame streaming (`/api/ws/cameras/{id}/stream`) ultra-low latency (~100-200ms)
+- [x] HTTP MJPEG multipart fallback (`/api/cameras/{id}/stream.mjpg`)
+- [x] Frontend `<canvas>` render con `createImageBitmap` + FPS estimator + snapshot/fullscreen/reload controls
+- [x] Auto-reconnect a los 2s si se cae la WS
 
-## Phase 4 - Grabación + Google Drive + rotación 7 días
-- [ ] OAuth Google Drive (settings.connect_gdrive)
-- [ ] Agente sube clips a /SmartCam/{camara}/{YYYY-MM-DD}/{HH-MM-SS}.mp4
-- [ ] Cron de limpieza >7 días
+## Phase 4 - Grabación + rotación 7 días — Partial (2026-06)
+- [x] Micro-clips MP4 de 5s (2s pre + 3s post) generados automáticamente para TODOS los eventos
+- [x] Rolling buffer en RAM por cámara (`/app/backend/clip_recorder.py`)
+- [x] Codificación OpenCV mp4v a `/app/backend/clips/{event_id}.mp4`
+- [x] Servidos vía StaticFiles en `/api/clips/{event_id}.mp4`
+- [x] Loop de retention cada 1h purga clips > 7 días
+- [x] Reproductor `<video controls autoplay loop muted playsInline>` en modal de Eventos
+- [ ] P0: OAuth Google Drive (settings.connect_gdrive) + subida de clips a /SmartCam/{cam}/{YYYY-MM-DD}/...
 
-## Phase 5 - IA (YOLO + facial + sospechoso) + Timeline real
-- [ ] YOLOv8n en el agente
-- [ ] face_recognition / InsightFace + base "caras conocidas"
-- [ ] Clasificador de eventos sospechosos
-- [ ] Eventos persistidos en MongoDB con thumbnail_url + clip_url
+## Phase 5 - IA (YOLO + facial + sospechoso) + Timeline — Partial
+- [x] YOLOv8n en el backend (`ai_service.py`, torch-cpu + onnxruntime, ~350ms/frame)
+- [x] Endpoint `/api/agent/analyze` con auto-creación de eventos rate-limited 60s
+- [x] Eventos persistidos en MongoDB con thumbnail_url + clip_url
+- [x] Frontend Timeline con filtros + modal de detalle con clip player
+- [x] Face DETECTION en el agente (Haar cascade ligero para Pi 3B+)
+- [ ] P1: Face RECOGNITION real (embeddings) contra galería `/faces`
+- [ ] P1: Clasificador de eventos sospechosos (lógica de zonas + comportamiento)
+
+## Phase UI Polish (2026-06)
+- [x] Refactor "Brutalist Editorial": lima eléctrico #C8FF00, Bricolage Grotesque, bordes filosos
+- [x] Framer Motion: stat cards staggered, eventos fade-up, AppShell fade+slide entre páginas
+- [x] Mobile responsive con Sheet drawer
+- [x] Bug fix: parpadeo en sidebar al navegar (NavRow estaba definido dentro del componente, causaba unmount/remount cada render)
 
 ## Phase 6 - Alertas WhatsApp (Twilio)
-- [ ] Integración Twilio
-- [ ] Configuración del número en /settings
-- [ ] Trigger en eventos suspicious
+- [ ] P1: Integración Twilio
+- [ ] P1: Configuración del número en /settings
+- [ ] P1: Trigger en eventos suspicious
 
 ## Phase 7 - Pulido + métricas + Super Admin completo
-- [ ] Logs y métricas globales (charts en admin)
-- [ ] Gestión de planes desde admin
-- [ ] Onboarding wizard
+- [ ] P2: Logs y métricas globales (charts en admin)
+- [ ] P2: Gestión de planes desde admin
+- [ ] P2: Onboarding wizard
 
 ## Backlog / Improvements
 - [ ] P1: Invalidar pairing_token tras primer pair exitoso (actualmente solo se invalida vía Regenerar)
@@ -98,3 +113,4 @@ Componentes:
 - [ ] P2: i18n EN/ES
 - [ ] P2: Cache del tar.gz de /agent/download
 - [ ] P2: TTL para detected_cameras + métricas históricas
+- [ ] P2: Browser-friendly H.264 (faststart) en lugar de mp4v para mejor compat móvil
