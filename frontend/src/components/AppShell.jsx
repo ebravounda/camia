@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { motion } from "framer-motion";
 import Sidebar from "@/components/Sidebar";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Menu, Cctv } from "lucide-react";
@@ -7,7 +8,7 @@ export default function AppShell({ children, title, subtitle, action }) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <div className="min-h-screen flex bg-[#090A0F] text-white">
+    <div className="min-h-screen flex bg-[#0A0A0A] text-white">
       {/* Desktop sidebar */}
       <div className="hidden md:flex md:sticky md:top-0 md:h-screen">
         <Sidebar />
@@ -15,7 +16,7 @@ export default function AppShell({ children, title, subtitle, action }) {
 
       <main className="flex-1 min-w-0">
         {/* Sticky header with mobile menu */}
-        <header className="sticky top-0 z-30 backdrop-blur-xl bg-[#090A0F]/85 border-b border-white/10">
+        <header className="sticky top-0 z-30 backdrop-blur-xl bg-[#0A0A0A]/85 border-b border-white/10">
           <div className="px-4 sm:px-6 lg:px-8 py-4 flex items-center gap-3">
             {/* Mobile menu button + brand */}
             <div className="flex items-center gap-3 md:hidden">
@@ -23,19 +24,19 @@ export default function AppShell({ children, title, subtitle, action }) {
                 <SheetTrigger asChild>
                   <button
                     data-testid="mobile-menu-button"
-                    className="w-10 h-10 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors"
+                    className="w-10 h-10 border border-white/10 bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors"
                     aria-label="Abrir menú"
                   >
                     <Menu className="w-5 h-5" />
                   </button>
                 </SheetTrigger>
-                <SheetContent side="left" className="p-0 w-64 bg-[#0E1017] border-white/10">
+                <SheetContent side="left" className="p-0 w-64 bg-[#0A0A0A] border-white/10">
                   <Sidebar onNavigate={() => setMobileOpen(false)} />
                 </SheetContent>
               </Sheet>
               <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-md bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center">
-                  <Cctv className="w-4 h-4 text-white" />
+                <div className="w-7 h-7 bg-[#C8FF00] flex items-center justify-center">
+                  <Cctv className="w-4 h-4 text-black" strokeWidth={2.5} />
                 </div>
                 <span className="font-display text-sm font-bold tracking-tight">SmartCam</span>
               </div>
@@ -69,7 +70,15 @@ export default function AppShell({ children, title, subtitle, action }) {
           </div>
         </header>
 
-        <div className="p-4 sm:p-6 lg:p-10">{children}</div>
+        <motion.div
+          key={typeof title === "string" ? title : "page"}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+          className="p-4 sm:p-6 lg:p-10"
+        >
+          {children}
+        </motion.div>
       </main>
     </div>
   );

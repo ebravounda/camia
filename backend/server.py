@@ -8,6 +8,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 from fastapi import FastAPI, APIRouter, Request
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 
@@ -15,6 +16,7 @@ from auth import router as auth_router, seed_admin
 from routes_app import router as app_router, admin_router
 from routes_billing import router as billing_router, stripe_webhook_handler
 from routes_agent import router as agent_router, mark_stale_devices_offline
+import clip_recorder
 
 
 # MongoDB
@@ -54,6 +56,9 @@ async def stripe_webhook(request: Request):
 
 app.include_router(api_router)
 
+# Serve micro-event clips (MP4)
+app.mount("/api/clips", StaticFiles(directory=str(clip_recorder.CLIPS_DIR)), name="clips")
+
 # CORS
 app.add_middleware(
     CORSMiddleware,
@@ -84,6 +89,9 @@ async def startup():
     await seed_admin(db)
     # Mark stale devices offline at startup
     await mark_stale_devices_offline(db)
+    # Start clip retention cleanup loop (purge >7 days every hour)
+    import asyncio as _asyncio
+    _asyncio.create_task(clip_recorder.retention_loop())
     logger.info("SmartCam SaaS API started; admin seeded.")
 
 

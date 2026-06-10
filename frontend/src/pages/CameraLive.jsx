@@ -168,7 +168,7 @@ export default function CameraLive() {
       }
     >
       {error ? (
-        <div className="rounded-xl bg-[#12141D] border border-red-500/20 p-8 text-center">
+        <div className="bg-[#0F0F0F] border border-red-500/20 p-8 text-center">
           <AlertTriangle className="w-10 h-10 mx-auto text-red-400 mb-3" />
           <div className="text-red-400">{error}</div>
         </div>
@@ -177,7 +177,7 @@ export default function CameraLive() {
           {/* Cinema-style player */}
           <div
             ref={containerRef}
-            className="relative aspect-video bg-black rounded-xl sm:rounded-2xl border border-white/10 overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.6)]"
+            className="relative aspect-video bg-black border border-white/10 overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.6)]"
             data-testid="player-container"
           >
             {playing ? (
@@ -194,12 +194,12 @@ export default function CameraLive() {
 
             {/* Top HUD bar */}
             <div className="absolute top-0 left-0 right-0 px-2 sm:px-4 py-2 sm:py-3 flex items-center justify-between bg-gradient-to-b from-black/70 to-transparent pointer-events-none">
-              <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-black/60 border border-white/10 text-[10px] sm:text-[11px] font-mono uppercase tracking-widest text-red-400 backdrop-blur-md">
-                <span className={`w-1.5 h-1.5 rounded-full ${playing ? "bg-red-500 live-dot" : "bg-gray-500"}`} />
+              <div className="flex items-center gap-1.5 px-2 py-1 bg-black/60 border border-white/10 text-[10px] sm:text-[11px] font-mono uppercase tracking-widest text-[#C8FF00] backdrop-blur-md">
+                <span className={`w-1.5 h-1.5 ${playing ? "bg-[#C8FF00] live-dot animate-pulse" : "bg-gray-500"}`} />
                 {playing ? "LIVE" : "PAUSADO"}
               </div>
-              <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-black/60 border border-white/10 text-[10px] font-mono uppercase tracking-widest text-gray-300 backdrop-blur-md">
-                <Activity className="w-3 h-3 text-blue-400" />
+              <div className="flex items-center gap-1.5 px-2 py-1 bg-black/60 border border-white/10 text-[10px] font-mono uppercase tracking-widest text-gray-300 backdrop-blur-md">
+                <Activity className="w-3 h-3 text-[#C8FF00]" />
                 <span className="hidden sm:inline">{fps.toFixed(1)} fps · {frameCount} frames · WS</span>
                 <span className="sm:hidden">{fps.toFixed(0)} fps</span>
               </div>
@@ -207,13 +207,13 @@ export default function CameraLive() {
 
             {/* Bottom HUD bar */}
             <div className="absolute bottom-0 left-0 right-0 px-2 sm:px-4 py-2 sm:py-3 flex items-center justify-between bg-gradient-to-t from-black/70 to-transparent">
-              <div className="px-2 py-1 rounded-md bg-black/60 border border-white/10 text-[10px] sm:text-[11px] font-mono backdrop-blur-md truncate max-w-[40%]">
+              <div className="px-2 py-1 bg-black/60 border border-white/10 text-[10px] sm:text-[11px] font-mono backdrop-blur-md truncate max-w-[40%]">
                 {camera?.name || "—"}
               </div>
               <div className="flex items-center gap-1 sm:gap-1.5 pointer-events-auto">
                 <button
                   onClick={() => setPlaying((p) => !p)}
-                  className="w-11 h-11 sm:w-9 sm:h-9 rounded-full bg-white/10 active:bg-white/30 hover:bg-white/20 backdrop-blur-md border border-white/15 flex items-center justify-center transition-colors"
+                  className="w-11 h-11 sm:w-9 sm:h-9 bg-white/10 active:bg-white/30 hover:bg-white/20 backdrop-blur-md border border-white/15 flex items-center justify-center transition-all hover:scale-105"
                   title={playing ? "Pausar" : "Reanudar"}
                   data-testid="player-play-pause"
                 >
@@ -221,7 +221,7 @@ export default function CameraLive() {
                 </button>
                 <button
                   onClick={reload}
-                  className="w-11 h-11 sm:w-9 sm:h-9 rounded-full bg-white/10 active:bg-white/30 hover:bg-white/20 backdrop-blur-md border border-white/15 flex items-center justify-center transition-colors"
+                  className="w-11 h-11 sm:w-9 sm:h-9 bg-white/10 active:bg-white/30 hover:bg-white/20 backdrop-blur-md border border-white/15 flex items-center justify-center transition-all hover:scale-105"
                   title="Reconectar"
                   data-testid="player-reload"
                 >
@@ -229,7 +229,7 @@ export default function CameraLive() {
                 </button>
                 <button
                   onClick={takeSnapshot}
-                  className="w-11 h-11 sm:w-9 sm:h-9 rounded-full bg-white/10 active:bg-white/30 hover:bg-white/20 backdrop-blur-md border border-white/15 flex items-center justify-center transition-colors"
+                  className="w-11 h-11 sm:w-9 sm:h-9 bg-white/10 active:bg-white/30 hover:bg-white/20 backdrop-blur-md border border-white/15 flex items-center justify-center transition-all hover:scale-105"
                   title="Capturar foto"
                   data-testid="player-snapshot"
                 >
@@ -237,11 +237,11 @@ export default function CameraLive() {
                 </button>
                 <button
                   onClick={goFullscreen}
-                  className="w-11 h-11 sm:w-9 sm:h-9 rounded-full bg-blue-600 active:bg-blue-800 hover:bg-blue-700 border border-blue-500 flex items-center justify-center transition-colors shadow-[0_0_14px_rgba(37,99,235,0.45)]"
+                  className="w-11 h-11 sm:w-9 sm:h-9 bg-[#C8FF00] active:bg-[#A8DF00] hover:bg-[#D8FF20] border border-[#C8FF00] flex items-center justify-center transition-all hover:scale-105 shadow-[0_0_14px_rgba(200,255,0,0.45)]"
                   title="Pantalla completa"
                   data-testid="player-fullscreen"
                 >
-                  <Maximize2 className="w-5 h-5 sm:w-4 sm:h-4 text-white" />
+                  <Maximize2 className="w-5 h-5 sm:w-4 sm:h-4 text-black" />
                 </button>
               </div>
             </div>
@@ -249,27 +249,27 @@ export default function CameraLive() {
 
           {/* Info bar */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="rounded-xl bg-[#12141D] border border-white/10 p-4 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
-                <Radio className="w-5 h-5 text-blue-400" />
+            <div className="bg-[#0F0F0F] border border-white/10 p-4 flex items-center gap-3 hover:border-[#C8FF00] transition-colors">
+              <div className="w-10 h-10 bg-[#C8FF00]/10 border border-[#C8FF00]/20 flex items-center justify-center">
+                <Radio className="w-5 h-5 text-[#C8FF00]" />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-[10px] uppercase tracking-widest font-mono text-gray-500">Protocolo</div>
-                <div className="text-sm">MJPEG · HTTP multipart</div>
+                <div className="text-sm">WebSocket · binary frames</div>
               </div>
             </div>
-            <div className="rounded-xl bg-[#12141D] border border-white/10 p-4 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-                <Activity className="w-5 h-5 text-emerald-400" />
+            <div className="bg-[#0F0F0F] border border-white/10 p-4 flex items-center gap-3 hover:border-[#C8FF00] transition-colors">
+              <div className="w-10 h-10 bg-[#C8FF00]/10 border border-[#C8FF00]/20 flex items-center justify-center">
+                <Activity className="w-5 h-5 text-[#C8FF00]" />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-[10px] uppercase tracking-widest font-mono text-gray-500">Fluidez</div>
                 <div className="text-sm">{fps.toFixed(1)} fps actuales</div>
               </div>
             </div>
-            <div className="rounded-xl bg-[#12141D] border border-white/10 p-4 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
-                <Cpu className="w-5 h-5 text-purple-400" />
+            <div className="bg-[#0F0F0F] border border-white/10 p-4 flex items-center gap-3 hover:border-[#C8FF00] transition-colors">
+              <div className="w-10 h-10 bg-[#C8FF00]/10 border border-[#C8FF00]/20 flex items-center justify-center">
+                <Cpu className="w-5 h-5 text-[#C8FF00]" />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-[10px] uppercase tracking-widest font-mono text-gray-500">IA</div>
@@ -278,12 +278,12 @@ export default function CameraLive() {
             </div>
           </div>
 
-          <div className="rounded-xl bg-[#12141D] border border-white/10 p-4 text-xs text-gray-400">
+          <div className="bg-[#0F0F0F] border border-white/10 p-4 text-xs text-gray-400">
             <span className="text-gray-500 font-mono uppercase tracking-widest text-[10px]">Tip</span>
             <span className="ml-2">
               Para más fluidez ajusta en la Pi:{" "}
-              <code className="px-1.5 py-0.5 bg-white/5 rounded text-blue-300 font-mono">SMARTCAM_STREAM_FPS=20</code>{" "}
-              <code className="px-1.5 py-0.5 bg-white/5 rounded text-blue-300 font-mono">SMARTCAM_CAM_FPS=20</code>
+              <code className="px-1.5 py-0.5 bg-white/5 text-[#C8FF00] font-mono">SMARTCAM_STREAM_FPS=20</code>{" "}
+              <code className="px-1.5 py-0.5 bg-white/5 text-[#C8FF00] font-mono">SMARTCAM_CAM_FPS=20</code>
             </span>
           </div>
         </div>

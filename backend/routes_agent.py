@@ -19,6 +19,7 @@ from models import utcnow, new_id
 from auth import get_current_user
 from streaming_hub import set_frame as stream_set_frame
 import ai_service
+import clip_recorder
 
 
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -215,6 +216,7 @@ async def report_event(payload: EventReport, device: dict = Depends(get_current_
     }
     await db.events.insert_one(event_doc)
     await db.cameras.update_one({"id": payload.camera_id}, {"$set": {"last_event_at": event_doc["created_at"]}})
+    clip_recorder.schedule_clip(event_doc["id"], payload.camera_id)
     event_doc.pop("_id", None)
     return event_doc
 
@@ -263,6 +265,8 @@ async def upload_frame(
     if len(body) > MAX_FRAME_SIZE:
         raise HTTPException(status_code=413, detail="Frame demasiado grande")
     stream_set_frame(x_camera_id, body)
+    # Push into per-camera rolling clip buffer
+    clip_recorder.add_frame(x_camera_id, body)
     # Also fan-out to any WS subscribers for ultra-low latency
     try:
         from streaming_hub import broadcast_frame
@@ -343,6 +347,7 @@ async def analyze_frame(
                     "created_at": now_ts,
                 }
                 await db.events.insert_one(event_doc)
+                clip_recorder.schedule_clip(event_doc["id"], x_camera_id)
 
     return {"detections": detections}
 

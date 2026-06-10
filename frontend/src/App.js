@@ -77,7 +77,7 @@ function AppRouter() {
 
 function App() {
   return (
-    <div className="App bg-[#090A0F] min-h-screen text-white">
+    <div className="App bg-[#0A0A0A] min-h-screen text-white">
       <AuthProvider>
         <BrowserRouter>
           <AppRouter />
@@ -86,9 +86,10 @@ function App() {
             position="top-right"
             toastOptions={{
               style: {
-                background: "#12141D",
+                background: "#0F0F0F",
                 border: "1px solid rgba(255,255,255,0.1)",
-                color: "#F9FAFB",
+                color: "#FAFAF7",
+                borderRadius: "4px",
               },
             }}
           />
