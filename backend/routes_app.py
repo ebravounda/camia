@@ -244,7 +244,12 @@ async def camera_stream_mjpeg(camera_id: str, request: Request, user: dict = Dep
     return StreamingResponse(
         generator(),
         media_type=f"multipart/x-mixed-replace; boundary={boundary}",
-        headers={"Cache-Control": "no-store, must-revalidate", "Pragma": "no-cache"},
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "X-Accel-Buffering": "no",  # disable nginx/ingress buffering
+            "Connection": "keep-alive",
+        },
     )
 
 
