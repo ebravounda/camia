@@ -184,14 +184,46 @@ _face_cascade = None
 
 
 def _get_face_cascade():
+    """Load Haar cascade from any of the common paths on Pi/Debian/Ubuntu."""
     global _face_cascade
     if cv2 is None:
         return None
-    if _face_cascade is None:
-        path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-        cascade = cv2.CascadeClassifier(path)
-        _face_cascade = cascade if not cascade.empty() else False
-    return _face_cascade if _face_cascade else None
+    if _face_cascade is not None:
+        return _face_cascade if _face_cascade is not False else None
+
+    candidates = []
+    # 1) pip wheel install (opencv-python / opencv-contrib-python)
+    try:
+        if hasattr(cv2, "data") and hasattr(cv2.data, "haarcascades"):
+            candidates.append(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+    except Exception:
+        pass
+    # 2) Debian / Raspberry Pi OS apt package paths
+    candidates.extend([
+        "/usr/share/opencv4/haarcascades/haarcascade_frontalface_default.xml",
+        "/usr/share/opencv/haarcascades/haarcascade_frontalface_default.xml",
+        "/usr/local/share/opencv4/haarcascades/haarcascade_frontalface_default.xml",
+    ])
+    # 3) Last-resort glob (limited depth)
+    try:
+        import glob as _glob
+        for p in _glob.glob("/usr/share/*/haarcascades/haarcascade_frontalface_default.xml"):
+            candidates.append(p)
+    except Exception:
+        pass
+
+    for path in candidates:
+        try:
+            cascade = cv2.CascadeClassifier(path)
+            if not cascade.empty():
+                print(f"[agent] face cascade loaded from {path}")
+                _face_cascade = cascade
+                return _face_cascade
+        except Exception:
+            continue
+    print("[agent] WARN: face cascade not found — face detection disabled", file=sys.stderr)
+    _face_cascade = False
+    return None
 
 
 def _detect_faces(frame) -> list:
