@@ -29,13 +29,16 @@ export default function CameraLive() {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
   const wsRef = useRef(null);
-  const fpsTickRef = useRef({ count: 0, lastTs: Date.now() });
+  const fpsTickRef = useRef({ count: 0, lastTs: Date.now(), total: 0 });
   // Audio playback
   const audioCtxRef = useRef(null);
   const audioGainRef = useRef(null);
   const nextAudioPlayTimeRef = useRef(0);
   const mutedRef = useRef(muted);
   useEffect(() => { mutedRef.current = muted; }, [muted]);
+  // Canvas renderer mode is decided lazily — bitmaprenderer is fastest but
+  // not supported everywhere; we fall back to 2D.
+  const rendererCtxRef = useRef(null);
 
   // Load camera info
   useEffect(() => {
@@ -64,23 +67,43 @@ export default function CameraLive() {
     wsRef.current = ws;
 
     const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
+    // Pick the fastest available renderer ONCE per WS lifecycle.
+    // bitmaprenderer is zero-copy GPU transfer → no flicker, no double-buffer.
+    let renderer = rendererCtxRef.current;
+    let rendererKind = renderer?._kind;
+    if (!renderer && canvas) {
+      try {
+        renderer = canvas.getContext("bitmaprenderer");
+        if (renderer) renderer._kind = "bitmap";
+      } catch {}
+      if (!renderer) {
+        renderer = canvas.getContext("2d");
+        if (renderer) renderer._kind = "2d";
+      }
+      rendererCtxRef.current = renderer;
+      rendererKind = renderer?._kind;
+    }
 
     const handleVideo = async (buf) => {
       try {
         const blob = new Blob([buf], { type: "image/jpeg" });
         const bitmap = await createImageBitmap(blob);
-        if (canvas && ctx) {
+        if (canvas && renderer) {
           if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
             canvas.width = bitmap.width;
             canvas.height = bitmap.height;
+            // Only setState when the resolution genuinely changes (rare).
             setStreamRes({ w: bitmap.width, h: bitmap.height });
           }
-          ctx.drawImage(bitmap, 0, 0);
-          bitmap.close?.();
+          if (rendererKind === "bitmap") {
+            renderer.transferFromImageBitmap(bitmap);  // zero-copy, no flicker
+          } else {
+            renderer.drawImage(bitmap, 0, 0);
+            bitmap.close?.();
+          }
         }
         fpsTickRef.current.count += 1;
-        setFrameCount((c) => c + 1);
+        fpsTickRef.current.total += 1;
       } catch {}
     };
 
@@ -154,11 +177,12 @@ export default function CameraLive() {
       clearInterval(ping);
       try { ws.close(); } catch {}
       wsRef.current = null;
+      rendererCtxRef.current = null;  // canvas will remount, force fresh context
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, playing]);
 
-  // FPS estimator
+  // FPS estimator — updates state at 1 Hz only (avoids 20 re-renders/sec).
   useEffect(() => {
     if (!playing) { setFps(0); return; }
     const iv = setInterval(() => {
@@ -166,6 +190,7 @@ export default function CameraLive() {
       const elapsed = (now - fpsTickRef.current.lastTs) / 1000;
       if (elapsed >= 1) {
         setFps(Math.round((fpsTickRef.current.count / elapsed) * 10) / 10);
+        setFrameCount(fpsTickRef.current.total);
         fpsTickRef.current.count = 0;
         fpsTickRef.current.lastTs = now;
       }
@@ -232,7 +257,8 @@ export default function CameraLive() {
 
   const reload = () => {
     setFrameCount(0);
-    fpsTickRef.current = { count: 0, lastTs: Date.now() };
+    fpsTickRef.current = { count: 0, lastTs: Date.now(), total: 0 };
+    rendererCtxRef.current = null;
     if (wsRef.current) { try { wsRef.current.close(); } catch {} }
     setPlaying(false);
     setTimeout(() => setPlaying(true), 100);
