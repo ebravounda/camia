@@ -294,15 +294,20 @@ export default function CameraLive() {
             className="relative aspect-video bg-black border border-white/10 overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.6)]"
             data-testid="player-container"
           >
-            {playing ? (
-              <canvas
-                ref={canvasRef}
-                className="absolute inset-0 w-full h-full object-contain"
-                data-testid="live-stream-canvas"
-              />
-            ) : (
-              <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-sm">
-                <Pause className="w-10 h-10 opacity-50" />
+            {/* Canvas stays mounted always — avoids flash when toggling play/pause */}
+            <canvas
+              ref={canvasRef}
+              className="absolute inset-0 w-full h-full object-contain bg-black transition-opacity duration-200"
+              style={{
+                imageRendering: "high-quality",
+                willChange: "contents",
+                opacity: playing ? 1 : 0.25,
+              }}
+              data-testid="live-stream-canvas"
+            />
+            {!playing && (
+              <div className="absolute inset-0 flex items-center justify-center text-gray-500 pointer-events-none">
+                <Pause className="w-12 h-12 opacity-70" />
               </div>
             )}
 

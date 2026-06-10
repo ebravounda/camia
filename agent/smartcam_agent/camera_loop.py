@@ -36,7 +36,9 @@ STREAM_FPS = float(os.environ.get("SMARTCAM_STREAM_FPS", "20"))
 STREAM_MAX_WIDTH = int(os.environ.get("SMARTCAM_STREAM_MAX_WIDTH", "0"))
 STREAM_JPEG_QUALITY = int(os.environ.get("SMARTCAM_STREAM_QUALITY", "85"))
 STREAM_ENABLED = os.environ.get("SMARTCAM_STREAM", "1") not in ("0", "false", "no")
-HUD_ENABLED = os.environ.get("SMARTCAM_HUD", "1") not in ("0", "false", "no")
+# HUD overlay drawn on the JPEG before streaming (default OFF — looks unpro,
+# adds CPU. The browser draws its own clean overlays on top of clean frames).
+HUD_ENABLED = os.environ.get("SMARTCAM_HUD", "0") not in ("0", "false", "no")
 
 # Suspicious behaviour rules
 NIGHT_HOUR_START = int(os.environ.get("SMARTCAM_NIGHT_START", "22"))  # 22:00
@@ -189,7 +191,11 @@ def _draw_ai_detections(frame, detections, scale_x=1.0, scale_y=1.0) -> None:
 FACE_DETECT_INTERVAL = float(os.environ.get("SMARTCAM_FACE_INTERVAL", "0.5"))  # seconds between detections
 FACE_SAVE_COOLDOWN = int(os.environ.get("SMARTCAM_FACE_COOLDOWN", "60"))  # seconds between face events per cam
 FACE_ENABLED = os.environ.get("SMARTCAM_FACE", "1") not in ("0", "false", "no")
-FACE_MIN_SIZE = int(os.environ.get("SMARTCAM_FACE_MIN_SIZE", "40"))
+FACE_MIN_SIZE = int(os.environ.get("SMARTCAM_FACE_MIN_SIZE", "80"))   # larger → fewer false positives
+FACE_MIN_NEIGHBORS = int(os.environ.get("SMARTCAM_FACE_NEIGHBORS", "9"))  # was 5 (laxo), 9 = strict
+# Require that YOLO also saw a person in the last AI window before accepting
+# Haar face detections (massive cut in false positives on door frames / shadows).
+FACE_REQUIRE_PERSON = os.environ.get("SMARTCAM_FACE_REQUIRE_PERSON", "1") not in ("0", "false", "no")
 
 _face_cascade = None
 
@@ -245,7 +251,7 @@ def _detect_faces(frame) -> list:
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     gray = cv2.equalizeHist(gray)
     faces = cascade.detectMultiScale(
-        gray, scaleFactor=1.2, minNeighbors=5,
+        gray, scaleFactor=1.2, minNeighbors=FACE_MIN_NEIGHBORS,
         minSize=(FACE_MIN_SIZE, FACE_MIN_SIZE),
     )
     return [tuple(int(v) for v in f) for f in faces]
@@ -462,11 +468,23 @@ def _worker(api_url: str, api_key: str, cam: Dict[str, Any], stop_event: threadi
                 if FACE_ENABLED and (time.time() - last_face_detect_at) >= FACE_DETECT_INTERVAL:
                     last_face_detect_at = time.time()
                     try:
-                        last_faces = _detect_faces(frame)
+                        raw_faces = _detect_faces(frame)
                     except Exception as e:
                         if int(time.time()) % 30 == 0:
                             print(f"[agent][cam:{name}] face detect error: {e}", file=sys.stderr)
-                        last_faces = []
+                        raw_faces = []
+
+                    # FALSE-POSITIVE GUARD: only accept Haar faces if YOLO
+                    # also detected a person in the recent AI window. Door
+                    # frames, shadows and wallpaper patterns no longer fire.
+                    if FACE_REQUIRE_PERSON and raw_faces:
+                        has_person = any(
+                            (d.get("label") or "").lower() in ("person", "persona")
+                            for d in (last_ai_detections or [])
+                        )
+                        if not has_person:
+                            raw_faces = []
+                    last_faces = raw_faces
 
                     # Save first face as an event (rate-limited)
                     if last_faces and (time.time() - last_face_saved_at) >= FACE_SAVE_COOLDOWN:
@@ -545,13 +563,16 @@ def _worker(api_url: str, api_key: str, cam: Dict[str, Any], stop_event: threadi
                 last_ai_detections = _ai_state["detections"]
                 last_ai_frame_size = _ai_state["frame_size"]
 
-                # Build the display frame with overlays
+                # Build the display frame. With HUD off (now the default) and
+                # nothing to draw, we skip the frame.copy() entirely — huge
+                # bandwidth on HD/FHD. The browser draws its own overlays.
                 display_frame = frame
-                if HUD_ENABLED or last_faces or last_motion_rects or last_ai_detections:
+                draw_anything = HUD_ENABLED or (last_faces and HUD_ENABLED) or \
+                    (last_motion_rects and HUD_ENABLED) or (last_ai_detections and HUD_ENABLED)
+                if draw_anything:
                     display_frame = frame.copy()
                     if last_motion_rects:
                         _draw_motion_boxes(display_frame, last_motion_rects)
-                    # Draw AI detections (scale boxes from AI frame back to current frame)
                     if last_ai_detections and last_ai_frame_size:
                         h_cur, w_cur = display_frame.shape[:2]
                         sx = w_cur / float(last_ai_frame_size[0]) if last_ai_frame_size[0] else 1.0
@@ -566,11 +587,26 @@ def _worker(api_url: str, api_key: str, cam: Dict[str, Any], stop_event: threadi
 
                 jpeg = _encode_stream_jpeg(display_frame)
                 if jpeg:
-                    try:
-                        client.upload_live_frame(api_url, api_key, cam_id, jpeg)
-                    except Exception as e:
-                        if int(time.time()) % 30 == 0:
-                            print(f"[agent][cam:{name}] stream upload error: {e}", file=sys.stderr)
+                    # Fire-and-forget HTTP POST — don't block the capture loop
+                    # waiting for the RTT (this is the main fluidity win).
+                    # We cap concurrency at 2 in-flight via a tiny semaphore so
+                    # we don't pile up if the network stalls.
+                    if not hasattr(_worker, "_stream_sem"):
+                        _worker._stream_sem = threading.Semaphore(2)
+                    sem = _worker._stream_sem
+                    if sem.acquire(blocking=False):
+                        def _send(payload: bytes, _sem=sem):
+                            try:
+                                client.upload_live_frame(api_url, api_key, cam_id, payload)
+                            except Exception as e:
+                                if int(time.time()) % 30 == 0:
+                                    print(f"[agent][cam:{name}] stream upload error: {e}", file=sys.stderr)
+                            finally:
+                                _sem.release()
+                        threading.Thread(target=_send, args=(jpeg,),
+                                          name=f"snd-{cam_id[:6]}",
+                                          daemon=True).start()
+                    # else: drop the frame (backpressure)
 
             # frame pacing
             elapsed = time.time() - t0
