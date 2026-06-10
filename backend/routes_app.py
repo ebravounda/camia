@@ -3,15 +3,20 @@ import asyncio
 import secrets
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response, StreamingResponse
+import jwt as _jwt
+import os as _os
 
 from models import (
     Device, DeviceCreate, Camera, CameraCreate, Event, Plan,
     UserPublic, utcnow, new_id,
 )
 from auth import get_current_user, require_super_admin
-from streaming_hub import get_frame, LIVE_FRAMES
+from streaming_hub import (
+    get_frame, LIVE_FRAMES,
+    add_subscriber, remove_subscriber,
+)
 
 
 router = APIRouter(tags=["app"])
@@ -247,10 +252,76 @@ async def camera_stream_mjpeg(camera_id: str, request: Request, user: dict = Dep
         headers={
             "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
             "Pragma": "no-cache",
-            "X-Accel-Buffering": "no",  # disable nginx/ingress buffering
+            "X-Accel-Buffering": "no",
             "Connection": "keep-alive",
         },
     )
+
+
+# WebSocket low-latency stream — browser uses canvas to render
+@router.websocket("/ws/cameras/{camera_id}/stream")
+async def ws_stream(websocket: WebSocket, camera_id: str, token: Optional[str] = None):
+    """WebSocket binary frame stream. Auth via ?token=JWT query param.
+
+    Authenticates via the JWT in `?token=...` (cookie/Bearer don't always work
+    for WS handshakes through proxies).
+    """
+    from server import db
+
+    # Authenticate
+    user_id = None
+    if token:
+        try:
+            payload = _jwt.decode(token, _os.environ["JWT_SECRET"], algorithms=["HS256"])
+            user_id = payload.get("sub")
+        except _jwt.PyJWTError:
+            pass
+    if not user_id:
+        # Fall back to cookie
+        c = websocket.cookies.get("access_token")
+        if c:
+            try:
+                payload = _jwt.decode(c, _os.environ["JWT_SECRET"], algorithms=["HS256"])
+                user_id = payload.get("sub")
+            except _jwt.PyJWTError:
+                pass
+    if not user_id:
+        await websocket.close(code=4401)
+        return
+
+    cam = await db.cameras.find_one({"id": camera_id, "user_id": user_id}, {"_id": 0})
+    if not cam:
+        await websocket.close(code=4404)
+        return
+
+    await websocket.accept()
+    add_subscriber(camera_id, websocket)
+
+    # Send the most recent frame immediately if available (no wait)
+    entry = get_frame(camera_id)
+    if entry:
+        try:
+            await websocket.send_bytes(entry[1])
+        except Exception:
+            pass
+
+    try:
+        while True:
+            # Just keep the connection alive; reads are not needed but
+            # let the client send ping/pongs to detect disconnect.
+            try:
+                await websocket.receive_text()
+            except WebSocketDisconnect:
+                break
+            except Exception:
+                # binary or anything else — ignore
+                pass
+    finally:
+        remove_subscriber(camera_id, websocket)
+        try:
+            await websocket.close()
+        except Exception:
+            pass
 
 
 # ===== EVENTS =====

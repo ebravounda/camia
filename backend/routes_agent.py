@@ -263,6 +263,12 @@ async def upload_frame(
     if len(body) > MAX_FRAME_SIZE:
         raise HTTPException(status_code=413, detail="Frame demasiado grande")
     stream_set_frame(x_camera_id, body)
+    # Also fan-out to any WS subscribers for ultra-low latency
+    try:
+        from streaming_hub import broadcast_frame
+        await broadcast_frame(x_camera_id, body)
+    except Exception:
+        pass
     return {"ok": True, "size": len(body)}
 
 

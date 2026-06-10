@@ -17,12 +17,13 @@ export default function CameraLive() {
   const [camera, setCamera] = useState(null);
   const [error, setError] = useState("");
   const [playing, setPlaying] = useState(true);
-  const [streamUrl, setStreamUrl] = useState("");
   const [fps, setFps] = useState(0);
   const [frameCount, setFrameCount] = useState(0);
-  const imgRef = useRef(null);
+  const [latencyMs, setLatencyMs] = useState(0);
+  const canvasRef = useRef(null);
   const containerRef = useRef(null);
-  const fpsTickRef = useRef({ count: 0, lastTs: Date.now() });
+  const wsRef = useRef(null);
+  const fpsTickRef = useRef({ count: 0, lastTs: Date.now(), lastFrameTs: 0 });
 
   // Load camera info
   useEffect(() => {
@@ -36,33 +37,75 @@ export default function CameraLive() {
     })();
   }, [id]);
 
-  // Build/refresh stream URL when playing toggles
+  // WebSocket binary stream — ultra-low latency
   useEffect(() => {
-    if (!playing) { setStreamUrl(""); return; }
-    setStreamUrl(`${BACKEND}/api/cameras/${id}/stream.mjpg?t=${Date.now()}`);
+    if (!playing) {
+      if (wsRef.current) { try { wsRef.current.close(); } catch {} wsRef.current = null; }
+      return;
+    }
+    const token = localStorage.getItem("sc_access_token") || "";
+    const wsScheme = BACKEND.startsWith("https") ? "wss" : "ws";
+    const wsHost = BACKEND.replace(/^https?:\/\//, "");
+    const url = `${wsScheme}://${wsHost}/api/ws/cameras/${id}/stream?token=${encodeURIComponent(token)}`;
+    const ws = new WebSocket(url);
+    ws.binaryType = "arraybuffer";
+    wsRef.current = ws;
+
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+
+    ws.onmessage = async (evt) => {
+      if (typeof evt.data === "string") return;
+      const arrival = performance.now();
+      try {
+        const blob = new Blob([evt.data], { type: "image/jpeg" });
+        const bitmap = await createImageBitmap(blob);
+        if (canvas && ctx) {
+          if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+            canvas.width = bitmap.width;
+            canvas.height = bitmap.height;
+          }
+          ctx.drawImage(bitmap, 0, 0);
+          bitmap.close?.();
+        }
+        fpsTickRef.current.count += 1;
+        fpsTickRef.current.lastFrameTs = arrival;
+        setFrameCount((c) => c + 1);
+      } catch (e) {
+        // ignore decode errors
+      }
+    };
+    ws.onerror = () => setError("WebSocket falló. Cae a HTTP MJPEG (recarga la página).");
+    ws.onclose = () => { wsRef.current = null; };
+
+    // Heartbeat to detect dead connection
+    const ping = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        try { ws.send("ping"); } catch {}
+      }
+    }, 15000);
+
+    return () => {
+      clearInterval(ping);
+      try { ws.close(); } catch {}
+      wsRef.current = null;
+    };
   }, [id, playing]);
 
-  // FPS estimator: count `load` events on the <img> over 1s windows.
-  // MJPEG multipart triggers a "load"-like event per frame in Chrome/Firefox.
+  // FPS estimator (1s window)
   useEffect(() => {
     if (!playing) { setFps(0); return; }
     const iv = setInterval(() => {
       const now = Date.now();
       const elapsed = (now - fpsTickRef.current.lastTs) / 1000;
       if (elapsed >= 1) {
-        const f = fpsTickRef.current.count / elapsed;
-        setFps(Math.round(f * 10) / 10);
+        setFps(Math.round((fpsTickRef.current.count / elapsed) * 10) / 10);
         fpsTickRef.current.count = 0;
         fpsTickRef.current.lastTs = now;
       }
     }, 1000);
     return () => clearInterval(iv);
   }, [playing]);
-
-  const handleFrame = () => {
-    fpsTickRef.current.count += 1;
-    setFrameCount((c) => c + 1);
-  };
 
   const goFullscreen = () => {
     const el = containerRef.current;
@@ -71,12 +114,10 @@ export default function CameraLive() {
 
   const takeSnapshot = async () => {
     try {
-      const res = await fetch(`${BACKEND}/api/cameras/${id}/snapshot.jpg?t=${Date.now()}`, {
-        credentials: "include",
-        headers: { Authorization: `Bearer ${localStorage.getItem("sc_access_token") || ""}` },
-      });
-      if (!res.ok) throw new Error("snapshot");
-      const blob = await res.blob();
+      const canvas = canvasRef.current;
+      if (!canvas) throw new Error("no canvas");
+      const blob = await new Promise((r) => canvas.toBlob(r, "image/jpeg", 0.9));
+      if (!blob) throw new Error("encode failed");
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -86,14 +127,16 @@ export default function CameraLive() {
       URL.revokeObjectURL(url);
       toast.success("Captura guardada");
     } catch {
-      toast.error("No se pudo capturar (¿hay stream activo?)");
+      toast.error("No se pudo capturar");
     }
   };
 
   const reload = () => {
     setFrameCount(0);
-    fpsTickRef.current = { count: 0, lastTs: Date.now() };
-    setStreamUrl(`${BACKEND}/api/cameras/${id}/stream.mjpg?t=${Date.now()}`);
+    fpsTickRef.current = { count: 0, lastTs: Date.now(), lastFrameTs: 0 };
+    if (wsRef.current) { try { wsRef.current.close(); } catch {} }
+    setPlaying(false);
+    setTimeout(() => setPlaying(true), 100);
   };
 
   return (
@@ -124,15 +167,11 @@ export default function CameraLive() {
             className="relative aspect-video bg-black rounded-2xl border border-white/10 overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.6)]"
             data-testid="player-container"
           >
-            {streamUrl ? (
-              <img
-                ref={imgRef}
-                src={streamUrl}
-                onLoad={handleFrame}
-                alt="Live stream"
+            {playing ? (
+              <canvas
+                ref={canvasRef}
                 className="absolute inset-0 w-full h-full object-contain"
-                data-testid="live-stream-img"
-                onError={() => setError("No se pudo cargar el stream. Verifica que el agente esté enviando frames.")}
+                data-testid="live-stream-canvas"
               />
             ) : (
               <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-sm">
@@ -148,7 +187,7 @@ export default function CameraLive() {
               </div>
               <div className="flex items-center gap-2 px-2.5 py-1 rounded-md bg-black/60 border border-white/10 text-[10px] font-mono uppercase tracking-widest text-gray-300 backdrop-blur-md">
                 <Activity className="w-3 h-3 text-blue-400" />
-                {fps.toFixed(1)} fps · {frameCount} frames
+                {fps.toFixed(1)} fps · {frameCount} frames · WS
               </div>
             </div>
 
