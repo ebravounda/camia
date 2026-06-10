@@ -9,13 +9,14 @@ import jwt as _jwt
 import os as _os
 
 from models import (
-    Device, DeviceCreate, Camera, CameraCreate, Event, Plan,
+    Device, DeviceCreate, Camera, CameraCreate, CameraSettings, Event, Plan,
     UserPublic, utcnow, new_id,
 )
 from auth import get_current_user, require_super_admin
 from streaming_hub import (
     get_frame, LIVE_FRAMES,
     add_subscriber, remove_subscriber,
+    VIDEO_MARKER,
 )
 
 
@@ -178,12 +179,32 @@ async def create_camera(payload: CameraCreate, user: dict = Depends(get_current_
         "usb_index": payload.usb_index,
         "enabled": payload.enabled,
         "status": "offline",
+        "resolution": "HD",
+        "audio_enabled": True,
         "last_event_at": None,
         "detection_zones": [],
         "created_at": utcnow().isoformat(),
     }
     await db.cameras.insert_one(doc)
     return doc
+
+
+@router.patch("/cameras/{camera_id}", response_model=Camera)
+async def update_camera(camera_id: str, payload: CameraSettings, user: dict = Depends(get_current_user)):
+    """Update camera settings: resolution, audio_enabled, name."""
+    from server import db
+    update = {k: v for k, v in payload.dict().items() if v is not None}
+    if not update:
+        raise HTTPException(status_code=400, detail="Sin cambios")
+    result = await db.cameras.find_one_and_update(
+        {"id": camera_id, "user_id": user["id"]},
+        {"$set": update},
+        return_document=True,
+        projection={"_id": 0},
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Cámara no encontrada")
+    return result
 
 
 @router.delete("/cameras/{camera_id}")
@@ -301,7 +322,7 @@ async def ws_stream(websocket: WebSocket, camera_id: str, token: Optional[str] =
     entry = get_frame(camera_id)
     if entry:
         try:
-            await websocket.send_bytes(entry[1])
+            await websocket.send_bytes(VIDEO_MARKER + entry[1])
         except Exception:
             pass
 

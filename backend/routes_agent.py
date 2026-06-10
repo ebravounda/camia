@@ -243,7 +243,7 @@ async def download_agent(user: dict = Depends(get_current_user)):
 
 
 # ---------- Live frame upload (raw JPEG) ----------
-MAX_FRAME_SIZE = 500_000  # 500KB per frame is enough for 720p MJPEG
+MAX_FRAME_SIZE = 2_000_000  # 2MB per frame — enough for FHD/HD JPEGs
 
 
 @router.post("/frame")
@@ -271,6 +271,39 @@ async def upload_frame(
     try:
         from streaming_hub import broadcast_frame
         await broadcast_frame(x_camera_id, body)
+    except Exception:
+        pass
+    return {"ok": True, "size": len(body)}
+
+
+# ---------- Live audio upload (raw PCM s16le mono 16kHz) ----------
+MAX_AUDIO_CHUNK = 200_000  # ~6 seconds at 16kHz mono is 192KB — over-safe cap
+
+
+@router.post("/audio")
+async def upload_audio(
+    request: Request,
+    x_camera_id: str = Header(..., alias="X-Camera-Id"),
+    device: dict = Depends(get_current_agent),
+):
+    """Agent uploads a PCM s16le mono 16kHz audio chunk (Content-Type: audio/L16)."""
+    from server import db
+    cam = await db.cameras.find_one(
+        {"id": x_camera_id, "device_id": device["id"]}, {"_id": 0}
+    )
+    if not cam:
+        raise HTTPException(status_code=404, detail="Cámara no asignada a este dispositivo")
+    body = await request.body()
+    if not body:
+        return {"ok": True, "size": 0}
+    if len(body) > MAX_AUDIO_CHUNK:
+        raise HTTPException(status_code=413, detail="Audio chunk demasiado grande")
+    # Buffer for clip mux
+    clip_recorder.add_audio(x_camera_id, body)
+    # Live broadcast
+    try:
+        from streaming_hub import broadcast_audio
+        await broadcast_audio(x_camera_id, body)
     except Exception:
         pass
     return {"ok": True, "size": len(body)}

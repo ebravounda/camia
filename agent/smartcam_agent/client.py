@@ -101,6 +101,23 @@ def upload_live_frame(api_url: str, api_key: str, camera_id: str, jpeg_bytes: by
     r.raise_for_status()
 
 
+def upload_audio(api_url: str, api_key: str, camera_id: str, pcm_bytes: bytes) -> None:
+    """POST raw PCM s16le mono 16kHz audio chunk."""
+    session = _get_stream_session()
+    headers = {
+        "Authorization": f"Agent {api_key}",
+        "Content-Type": "audio/L16",
+        "X-Camera-Id": camera_id,
+    }
+    r = session.post(
+        f"{api_url.rstrip('/')}/agent/audio",
+        data=pcm_bytes,
+        headers=headers,
+        timeout=5,
+    )
+    r.raise_for_status()
+
+
 def analyze_frame(api_url: str, api_key: str, camera_id: str, jpeg_bytes: bytes) -> list:
     """POST a JPEG to backend for YOLO analysis; returns list of detections."""
     session = _get_stream_session()

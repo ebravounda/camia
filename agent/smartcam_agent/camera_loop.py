@@ -30,10 +30,11 @@ AI_INTERVAL = float(os.environ.get("SMARTCAM_AI_INTERVAL", "2.5"))  # seconds be
 AI_JPEG_QUALITY = int(os.environ.get("SMARTCAM_AI_QUALITY", "70"))
 AI_MAX_WIDTH = int(os.environ.get("SMARTCAM_AI_MAX_WIDTH", "480"))
 
-# Live streaming defaults (low for Pi 3B+, can be raised on Pi 4/5).
+# Live streaming defaults. STREAM_MAX_WIDTH=0 means use the camera's full
+# capture resolution (recommended now that HD/FHD is selectable per-camera).
 STREAM_FPS = float(os.environ.get("SMARTCAM_STREAM_FPS", "15"))
-STREAM_MAX_WIDTH = int(os.environ.get("SMARTCAM_STREAM_MAX_WIDTH", "640"))
-STREAM_JPEG_QUALITY = int(os.environ.get("SMARTCAM_STREAM_QUALITY", "70"))
+STREAM_MAX_WIDTH = int(os.environ.get("SMARTCAM_STREAM_MAX_WIDTH", "0"))
+STREAM_JPEG_QUALITY = int(os.environ.get("SMARTCAM_STREAM_QUALITY", "75"))
 STREAM_ENABLED = os.environ.get("SMARTCAM_STREAM", "1") not in ("0", "false", "no")
 HUD_ENABLED = os.environ.get("SMARTCAM_HUD", "1") not in ("0", "false", "no")
 
@@ -42,12 +43,19 @@ NIGHT_HOUR_START = int(os.environ.get("SMARTCAM_NIGHT_START", "22"))  # 22:00
 NIGHT_HOUR_END = int(os.environ.get("SMARTCAM_NIGHT_END", "6"))      # 06:00
 SUSPICIOUS_COOLDOWN_SEC = int(os.environ.get("SMARTCAM_SUSP_COOLDOWN", "120"))
 
-# Camera capture defaults (override via env vars). MJPG @ 640x480 is a great
-# default for Raspberry Pi 3B+: low CPU, compressed pixel format, plenty of fps.
-CAM_WIDTH = int(os.environ.get("SMARTCAM_CAM_WIDTH", "640"))
-CAM_HEIGHT = int(os.environ.get("SMARTCAM_CAM_HEIGHT", "480"))
+# Resolution presets (overridden per-camera from backend config)
+RESOLUTION_PRESETS = {
+    "SD":  (640, 480),
+    "HD":  (1280, 720),
+    "FHD": (1920, 1080),
+}
+
+# Camera capture defaults (override via env vars). MJPG is mandatory for HD/FHD
+# on Pi 3B+ to avoid the bandwidth wall of raw YUYV.
 CAM_FPS = int(os.environ.get("SMARTCAM_CAM_FPS", "15"))
 CAM_FOURCC = os.environ.get("SMARTCAM_CAM_FOURCC", "MJPG")
+# Default resolution fallback when backend doesn't specify
+DEFAULT_RESOLUTION = os.environ.get("SMARTCAM_DEFAULT_RES", "HD")
 
 
 # ---------------- USB camera scan ----------------
@@ -126,13 +134,14 @@ def _encode_thumbnail(frame) -> Optional[str]:
 
 
 def _encode_stream_jpeg(frame) -> Optional[bytes]:
-    """Resize and JPEG-encode a frame as raw bytes for live streaming."""
+    """Resize (if STREAM_MAX_WIDTH>0) and JPEG-encode a frame as raw bytes for live streaming."""
     if cv2 is None or frame is None:
         return None
-    h, w = frame.shape[:2]
-    if w > STREAM_MAX_WIDTH:
-        scale = STREAM_MAX_WIDTH / float(w)
-        frame = cv2.resize(frame, (STREAM_MAX_WIDTH, int(h * scale)))
+    if STREAM_MAX_WIDTH > 0:
+        h, w = frame.shape[:2]
+        if w > STREAM_MAX_WIDTH:
+            scale = STREAM_MAX_WIDTH / float(w)
+            frame = cv2.resize(frame, (STREAM_MAX_WIDTH, int(h * scale)))
     ok, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), STREAM_JPEG_QUALITY])
     if not ok:
         return None
@@ -350,16 +359,19 @@ def _worker(api_url: str, api_key: str, cam: Dict[str, Any], stop_event: threadi
 
     # Configure capture for low CPU usage (critical on Pi 3B+).
     # Order matters on some cameras: set FOURCC first, then resolution, then FPS.
+    # Resolution comes from per-camera config: SD/HD/FHD.
+    cam_res = (cam.get("resolution") or DEFAULT_RESOLUTION).upper()
+    cap_w, cap_h = RESOLUTION_PRESETS.get(cam_res, RESOLUTION_PRESETS["HD"])
     try:
         if len(CAM_FOURCC) == 4:
             cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*CAM_FOURCC))
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAM_WIDTH)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAM_HEIGHT)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, cap_w)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, cap_h)
         cap.set(cv2.CAP_PROP_FPS, CAM_FPS)
         actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
         actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
         actual_fps = cap.get(cv2.CAP_PROP_FPS) or 0
-        print(f"[agent][cam:{name}] capture configured: {actual_w}x{actual_h} @ {actual_fps:.0f}fps fourcc={CAM_FOURCC}")
+        print(f"[agent][cam:{name}] capture {cam_res} ({cap_w}x{cap_h}) → actual {actual_w}x{actual_h} @ {actual_fps:.0f}fps fourcc={CAM_FOURCC}")
     except Exception as e:
         print(f"[agent][cam:{name}] could not configure capture: {e}", file=sys.stderr)
 

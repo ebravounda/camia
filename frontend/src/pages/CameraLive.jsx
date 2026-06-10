@@ -4,12 +4,15 @@ import AppShell from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import {
   ArrowLeft, Radio, Maximize2, AlertTriangle, Camera as CameraIcon,
-  Pause, Play, Activity, Cpu, RefreshCcw,
+  Pause, Play, Activity, Cpu, RefreshCcw, Volume2, VolumeX,
 } from "lucide-react";
 import api from "@/lib/api";
 import { toast } from "sonner";
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
+const AUDIO_SAMPLE_RATE = 16000;
+const VIDEO_MARKER = 0x01;
+const AUDIO_MARKER = 0x02;
 
 export default function CameraLive() {
   const { id } = useParams();
@@ -17,13 +20,22 @@ export default function CameraLive() {
   const [camera, setCamera] = useState(null);
   const [error, setError] = useState("");
   const [playing, setPlaying] = useState(true);
+  const [muted, setMuted] = useState(true);  // start muted (browser autoplay policy)
+  const [hasAudio, setHasAudio] = useState(false);
   const [fps, setFps] = useState(0);
   const [frameCount, setFrameCount] = useState(0);
-  const [latencyMs, setLatencyMs] = useState(0);
+  const [streamRes, setStreamRes] = useState({ w: 0, h: 0 });
+
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
   const wsRef = useRef(null);
-  const fpsTickRef = useRef({ count: 0, lastTs: Date.now(), lastFrameTs: 0 });
+  const fpsTickRef = useRef({ count: 0, lastTs: Date.now() });
+  // Audio playback
+  const audioCtxRef = useRef(null);
+  const audioGainRef = useRef(null);
+  const nextAudioPlayTimeRef = useRef(0);
+  const mutedRef = useRef(muted);
+  useEffect(() => { mutedRef.current = muted; }, [muted]);
 
   // Load camera info
   useEffect(() => {
@@ -37,7 +49,7 @@ export default function CameraLive() {
     })();
   }, [id]);
 
-  // WebSocket binary stream — ultra-low latency
+  // WebSocket multiplexed stream (video JPEG + audio PCM)
   useEffect(() => {
     if (!playing) {
       if (wsRef.current) { try { wsRef.current.close(); } catch {} wsRef.current = null; }
@@ -54,44 +66,84 @@ export default function CameraLive() {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
 
-    ws.onmessage = async (evt) => {
-      if (typeof evt.data === "string") return;
-      const arrival = performance.now();
+    const handleVideo = async (buf) => {
       try {
-        const blob = new Blob([evt.data], { type: "image/jpeg" });
+        const blob = new Blob([buf], { type: "image/jpeg" });
         const bitmap = await createImageBitmap(blob);
         if (canvas && ctx) {
           if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
             canvas.width = bitmap.width;
             canvas.height = bitmap.height;
+            setStreamRes({ w: bitmap.width, h: bitmap.height });
           }
           ctx.drawImage(bitmap, 0, 0);
           bitmap.close?.();
         }
         fpsTickRef.current.count += 1;
-        fpsTickRef.current.lastFrameTs = arrival;
         setFrameCount((c) => c + 1);
+      } catch {}
+    };
+
+    const handleAudio = (buf) => {
+      setHasAudio(true);
+      if (mutedRef.current) {
+        // Skip decoding when muted — saves CPU and avoids autoplay errors
+        return;
+      }
+      let ctx2 = audioCtxRef.current;
+      if (!ctx2) {
+        try {
+          ctx2 = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: AUDIO_SAMPLE_RATE });
+          const gain = ctx2.createGain();
+          gain.gain.value = 1.0;
+          gain.connect(ctx2.destination);
+          audioGainRef.current = gain;
+          audioCtxRef.current = ctx2;
+          nextAudioPlayTimeRef.current = ctx2.currentTime + 0.15;  // ~150ms jitter buffer
+        } catch (e) { console.warn("AudioContext failed:", e); return; }
+      }
+      if (ctx2.state === "suspended") {
+        ctx2.resume().catch(() => {});
+      }
+      try {
+        // Convert s16le PCM to Float32 [-1, 1]
+        const pcm = new Int16Array(buf);
+        if (pcm.length === 0) return;
+        const f32 = new Float32Array(pcm.length);
+        for (let i = 0; i < pcm.length; i++) f32[i] = pcm[i] / 32768;
+        const abuf = ctx2.createBuffer(1, f32.length, AUDIO_SAMPLE_RATE);
+        abuf.getChannelData(0).set(f32);
+        const src = ctx2.createBufferSource();
+        src.buffer = abuf;
+        src.connect(audioGainRef.current);
+        const now = ctx2.currentTime;
+        let when = nextAudioPlayTimeRef.current;
+        if (when < now + 0.02) when = now + 0.02;  // re-anchor if we drifted
+        if (when > now + 0.5) when = now + 0.15;   // cap forward drift (skip backlog)
+        src.start(when);
+        nextAudioPlayTimeRef.current = when + abuf.duration;
       } catch (e) {
-        // ignore decode errors
-      }
-    };
-    ws.onerror = () => {
-      // Only show error if no frames received yet
-      if (fpsTickRef.current.count === 0 && frameCount === 0) {
-        console.warn("WebSocket error — will try to reconnect");
-      }
-    };
-    ws.onclose = () => {
-      wsRef.current = null;
-      // Auto-reconnect after 2s if still playing
-      if (playing) {
-        setTimeout(() => {
-          if (playing && !wsRef.current) reload();
-        }, 2000);
+        // swallow audio errors silently — keep video flowing
       }
     };
 
-    // Heartbeat to detect dead connection
+    ws.onmessage = (evt) => {
+      if (typeof evt.data === "string") return;
+      const buf = evt.data;
+      if (!(buf instanceof ArrayBuffer) || buf.byteLength < 1) return;
+      const marker = new Uint8Array(buf, 0, 1)[0];
+      const payload = buf.slice(1);
+      if (marker === VIDEO_MARKER) handleVideo(payload);
+      else if (marker === AUDIO_MARKER) handleAudio(payload);
+    };
+
+    ws.onclose = () => {
+      wsRef.current = null;
+      if (playing) {
+        setTimeout(() => { if (playing && !wsRef.current) reload(); }, 2000);
+      }
+    };
+
     const ping = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) {
         try { ws.send("ping"); } catch {}
@@ -103,9 +155,10 @@ export default function CameraLive() {
       try { ws.close(); } catch {}
       wsRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, playing]);
 
-  // FPS estimator (1s window)
+  // FPS estimator
   useEffect(() => {
     if (!playing) { setFps(0); return; }
     const iv = setInterval(() => {
@@ -120,6 +173,39 @@ export default function CameraLive() {
     return () => clearInterval(iv);
   }, [playing]);
 
+  // Tear down audio context on unmount
+  useEffect(() => () => {
+    try { audioCtxRef.current?.close(); } catch {}
+    audioCtxRef.current = null;
+  }, []);
+
+  const toggleMute = async () => {
+    const next = !muted;
+    setMuted(next);
+    // Unmute requires a user gesture to start AudioContext
+    if (!next && !audioCtxRef.current) {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: AUDIO_SAMPLE_RATE });
+        const gain = ctx.createGain();
+        gain.gain.value = 1.0;
+        gain.connect(ctx.destination);
+        await ctx.resume();
+        audioGainRef.current = gain;
+        audioCtxRef.current = ctx;
+        nextAudioPlayTimeRef.current = ctx.currentTime + 0.15;
+      } catch (e) {
+        toast.error("Tu navegador bloqueó el audio");
+        setMuted(true);
+        return;
+      }
+    }
+    if (next && audioCtxRef.current) {
+      try { audioCtxRef.current.suspend(); } catch {}
+    } else if (!next && audioCtxRef.current?.state === "suspended") {
+      try { await audioCtxRef.current.resume(); } catch {}
+    }
+  };
+
   const goFullscreen = () => {
     const el = containerRef.current;
     if (el?.requestFullscreen) el.requestFullscreen();
@@ -129,7 +215,7 @@ export default function CameraLive() {
     try {
       const canvas = canvasRef.current;
       if (!canvas) throw new Error("no canvas");
-      const blob = await new Promise((r) => canvas.toBlob(r, "image/jpeg", 0.9));
+      const blob = await new Promise((r) => canvas.toBlob(r, "image/jpeg", 0.95));
       if (!blob) throw new Error("encode failed");
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -146,21 +232,23 @@ export default function CameraLive() {
 
   const reload = () => {
     setFrameCount(0);
-    fpsTickRef.current = { count: 0, lastTs: Date.now(), lastFrameTs: 0 };
+    fpsTickRef.current = { count: 0, lastTs: Date.now() };
     if (wsRef.current) { try { wsRef.current.close(); } catch {} }
     setPlaying(false);
     setTimeout(() => setPlaying(true), 100);
   };
 
+  const resTag = streamRes.h >= 1000 ? "FHD" : streamRes.h >= 700 ? "HD" : streamRes.h > 0 ? "SD" : (camera?.resolution || "—");
+
   return (
     <AppShell
       title={camera ? `En vivo · ${camera.name}` : "En vivo"}
-      subtitle="Streaming en tiempo real con IA"
+      subtitle={`Streaming WebSocket · ${resTag}${hasAudio ? " · audio" : ""}`}
       action={
         <Button
           variant="outline"
           onClick={() => navigate("/cameras")}
-          className="bg-white/5 border-white/15 text-white hover:bg-white/10"
+          className="bg-white/5 border-white/15 text-white hover:bg-white/10 rounded-none"
           data-testid="back-to-cameras-button"
         >
           <ArrowLeft className="w-4 h-4 mr-1.5" /> Cámaras
@@ -200,8 +288,8 @@ export default function CameraLive() {
               </div>
               <div className="flex items-center gap-1.5 px-2 py-1 bg-black/60 border border-white/10 text-[10px] font-mono uppercase tracking-widest text-gray-300 backdrop-blur-md">
                 <Activity className="w-3 h-3 text-[#C8FF00]" />
-                <span className="hidden sm:inline">{fps.toFixed(1)} fps · {frameCount} frames · WS</span>
-                <span className="sm:hidden">{fps.toFixed(0)} fps</span>
+                <span className="hidden sm:inline">{fps.toFixed(1)} fps · {streamRes.w}×{streamRes.h} · {frameCount}</span>
+                <span className="sm:hidden">{fps.toFixed(0)} fps · {resTag}</span>
               </div>
             </div>
 
@@ -211,6 +299,19 @@ export default function CameraLive() {
                 {camera?.name || "—"}
               </div>
               <div className="flex items-center gap-1 sm:gap-1.5 pointer-events-auto">
+                <button
+                  onClick={toggleMute}
+                  disabled={!hasAudio}
+                  className={`w-11 h-11 sm:w-9 sm:h-9 backdrop-blur-md border flex items-center justify-center transition-all hover:scale-105 ${
+                    !hasAudio ? "bg-white/5 border-white/10 text-gray-600 cursor-not-allowed"
+                      : muted ? "bg-white/10 border-white/15 text-white hover:bg-white/20"
+                      : "bg-[#C8FF00] border-[#C8FF00] text-black hover:bg-[#D8FF20]"
+                  }`}
+                  title={!hasAudio ? "Sin audio disponible" : (muted ? "Activar audio" : "Silenciar")}
+                  data-testid="player-mute"
+                >
+                  {muted ? <VolumeX className="w-5 h-5 sm:w-4 sm:h-4" /> : <Volume2 className="w-5 h-5 sm:w-4 sm:h-4" />}
+                </button>
                 <button
                   onClick={() => setPlaying((p) => !p)}
                   className="w-11 h-11 sm:w-9 sm:h-9 bg-white/10 active:bg-white/30 hover:bg-white/20 backdrop-blur-md border border-white/15 flex items-center justify-center transition-all hover:scale-105"
@@ -254,8 +355,8 @@ export default function CameraLive() {
                 <Radio className="w-5 h-5 text-[#C8FF00]" />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-[10px] uppercase tracking-widest font-mono text-gray-500">Protocolo</div>
-                <div className="text-sm">WebSocket · binary frames</div>
+                <div className="text-[10px] uppercase tracking-widest font-mono text-gray-500">Resolución</div>
+                <div className="text-sm">{streamRes.w}×{streamRes.h || "—"} · {resTag}</div>
               </div>
             </div>
             <div className="bg-[#0F0F0F] border border-white/10 p-4 flex items-center gap-3 hover:border-[#C8FF00] transition-colors">
@@ -269,11 +370,13 @@ export default function CameraLive() {
             </div>
             <div className="bg-[#0F0F0F] border border-white/10 p-4 flex items-center gap-3 hover:border-[#C8FF00] transition-colors">
               <div className="w-10 h-10 bg-[#C8FF00]/10 border border-[#C8FF00]/20 flex items-center justify-center">
-                <Cpu className="w-5 h-5 text-[#C8FF00]" />
+                {hasAudio
+                  ? (muted ? <VolumeX className="w-5 h-5 text-[#C8FF00]" /> : <Volume2 className="w-5 h-5 text-[#C8FF00]" />)
+                  : <Cpu className="w-5 h-5 text-[#C8FF00]" />}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-[10px] uppercase tracking-widest font-mono text-gray-500">IA</div>
-                <div className="text-sm">YOLO + Haar + Motion</div>
+                <div className="text-[10px] uppercase tracking-widest font-mono text-gray-500">Audio</div>
+                <div className="text-sm">{hasAudio ? (muted ? "Disponible · silenciado" : "Reproduciendo · 16 kHz mono") : "No detectado en el Pi"}</div>
               </div>
             </div>
           </div>
@@ -281,9 +384,8 @@ export default function CameraLive() {
           <div className="bg-[#0F0F0F] border border-white/10 p-4 text-xs text-gray-400">
             <span className="text-gray-500 font-mono uppercase tracking-widest text-[10px]">Tip</span>
             <span className="ml-2">
-              Para más fluidez ajusta en la Pi:{" "}
-              <code className="px-1.5 py-0.5 bg-white/5 text-[#C8FF00] font-mono">SMARTCAM_STREAM_FPS=20</code>{" "}
-              <code className="px-1.5 py-0.5 bg-white/5 text-[#C8FF00] font-mono">SMARTCAM_CAM_FPS=20</code>
+              Cambia la calidad <strong className="text-[#C8FF00]">HD/FHD</strong> desde la página <a href="/cameras" className="text-[#C8FF00] underline">Cámaras</a>.
+              Si tu Pi tiene micrófono conectado, el audio se detecta automáticamente.
             </span>
           </div>
         </div>

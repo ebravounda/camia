@@ -73,13 +73,25 @@ Componentes:
 - [x] Auto-reconnect a los 2s si se cae la WS
 
 ## Phase 4 - Grabación + rotación 7 días — Partial (2026-06)
-- [x] Micro-clips MP4 de 5s (2s pre + 3s post) generados automáticamente para TODOS los eventos
-- [x] Rolling buffer en RAM por cámara (`/app/backend/clip_recorder.py`)
-- [x] Codificación OpenCV mp4v a `/app/backend/clips/{event_id}.mp4`
+- [x] Micro-clips de 5s (2s pre + 3s post) generados automáticamente para TODOS los eventos
+- [x] Rolling buffer en RAM por cámara (video + audio) en `/app/backend/clip_recorder.py`
+- [x] **Encoding H.264 + AAC con PyAV/ffmpeg** (faststart para reproducción móvil)
 - [x] Servidos vía StaticFiles en `/api/clips/{event_id}.mp4`
 - [x] Loop de retention cada 1h purga clips > 7 días
-- [x] Reproductor `<video controls autoplay loop muted playsInline>` en modal de Eventos
+- [x] Reproductor `<video controls autoplay>` en modal de Eventos (con audio si lo hay)
 - [ ] P0: OAuth Google Drive (settings.connect_gdrive) + subida de clips a /SmartCam/{cam}/{YYYY-MM-DD}/...
+
+## Phase 4.5 - HD/FHD + Audio (2026-06)
+- [x] Selector de resolución **SD/HD/FHD** por cámara (UI en /cameras, PATCH /api/cameras/{id})
+- [x] Agente lee la resolución desde `/agent/cameras` y aplica `cv2.CAP_PROP_FRAME_WIDTH/HEIGHT`
+- [x] Stream pasa la resolución capturada tal cual (`STREAM_MAX_WIDTH=0` por defecto)
+- [x] **Audio capture** en el Pi: `audio_loop.py` con `arecord` subprocess (PCM s16le mono 16 kHz)
+- [x] Auto-detección de micrófono ALSA (skip si no hay `arecord -l` capture device)
+- [x] Endpoint `POST /api/agent/audio` recibe chunks (~200ms = 6.4KB) y los pushea al buffer + WS
+- [x] Protocolo WS multiplexado: 1-byte marker `0x01`=video JPEG, `0x02`=audio PCM
+- [x] Frontend `CameraLive.jsx` con **Web Audio API** decodifica PCM con jitter buffer ~150ms
+- [x] Control de mute/unmute en el reproductor live (gesto de usuario respeta autoplay policy)
+- [x] Eventos guardan `clip_has_audio: bool` para mostrar el badge correcto en el modal
 
 ## Phase 5 - IA (YOLO + facial + sospechoso) + Timeline — Partial
 - [x] YOLOv8n en el backend (`ai_service.py`, torch-cpu + onnxruntime, ~350ms/frame)

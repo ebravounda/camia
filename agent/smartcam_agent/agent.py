@@ -28,8 +28,9 @@ from typing import Optional
 from . import client
 from . import heartbeat as hb
 from . import camera_loop
+from . import audio_loop
 
-AGENT_VERSION = "0.2.0"
+AGENT_VERSION = "0.3.0"
 DEFAULT_CONFIG_PATH = Path(os.environ.get("SMARTCAM_CONFIG", "/etc/smartcam/config.json"))
 
 
@@ -121,6 +122,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         threading.Thread(target=discover_thread, name="discover", daemon=True),
         threading.Thread(target=camera_loop.run_camera_workers,
                          args=(api_url, api_key, stop_event), name="cams", daemon=True),
+        threading.Thread(target=audio_loop.run_audio_workers,
+                         args=(api_url, api_key, stop_event), name="audio", daemon=True),
     ]
     for t in threads:
         t.start()

@@ -165,12 +165,11 @@ export default function Events() {
                         autoPlay
                         loop
                         playsInline
-                        muted
                         className="w-full max-h-[60vh] object-contain bg-black"
                         data-testid="event-modal-clip"
                       />
                       <div className="flex items-center gap-2 px-3 py-2 border-t border-white/10 text-[10px] font-mono uppercase tracking-widest text-[#C8FF00]">
-                        <Film className="w-3 h-3" /> Micro-clip · 5s · MP4
+                        <Film className="w-3 h-3" /> Micro-clip · 5s · H.264{selected.clip_has_audio ? " + AAC audio" : " (sin audio)"}
                       </div>
                     </div>
                   ) : selected.thumbnail_url ? (

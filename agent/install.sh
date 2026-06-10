@@ -47,7 +47,7 @@ echo ">>> Detected arch: ${ARCH}"
 echo ">>> Installing system packages..."
 apt-get update -y
 apt-get install -y --no-install-recommends \
-  python3 python3-pip python3-venv python3-requests v4l-utils ca-certificates
+  python3 python3-pip python3-venv python3-requests v4l-utils alsa-utils ca-certificates
 
 # python3-opencv from apt is the safest path on Pi (uses optimised system libs)
 if ! python3 -c "import cv2" >/dev/null 2>&1; then

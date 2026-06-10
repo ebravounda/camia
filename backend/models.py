@@ -90,11 +90,19 @@ class Camera(CameraBase):
     id: str = Field(default_factory=new_id)
     user_id: str
     status: Literal["offline", "live", "error"] = "offline"
+    resolution: Literal["SD", "HD", "FHD"] = "HD"   # SD=640x480, HD=1280x720, FHD=1920x1080
+    audio_enabled: bool = True                       # auto-enabled on agent if mic detected
     last_event_at: Optional[datetime] = None
     last_thumbnail: Optional[str] = None  # base64 JPEG, small
     last_thumbnail_at: Optional[datetime] = None
     detection_zones: List[dict] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utcnow)
+
+
+class CameraSettings(BaseModel):
+    resolution: Optional[Literal["SD", "HD", "FHD"]] = None
+    audio_enabled: Optional[bool] = None
+    name: Optional[str] = None
 
 
 # ===== EVENT =====
