@@ -237,7 +237,7 @@ async def camera_stream_mjpeg(camera_id: str, request: Request, user: dict = Dep
                             f"Content-Length: {len(jpeg)}\r\n\r\n"
                         ).encode()
                         yield header + jpeg + b"\r\n"
-                await asyncio.sleep(0.05)  # poll 20Hz, actually limited by agent push rate
+                await asyncio.sleep(0.02)  # poll 50Hz, actually limited by agent push rate
         except asyncio.CancelledError:
             return
 
