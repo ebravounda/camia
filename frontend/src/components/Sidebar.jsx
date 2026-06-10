@@ -29,19 +29,19 @@ export default function Sidebar({ onNavigate }) {
       data-testid="app-sidebar"
       className="flex flex-col w-64 shrink-0 border-r border-white/10 bg-[#0E1017] min-h-screen"
     >
-      <div className="px-6 py-6 border-b border-white/10">
+      <div className="px-6 py-7 border-b border-white/10">
         <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center shadow-[0_0_14px_rgba(59,130,246,0.45)]">
-            <Cctv className="w-5 h-5 text-white" />
+          <div className="w-9 h-9 bg-[#C8FF00] flex items-center justify-center">
+            <Cctv className="w-5 h-5 text-black" strokeWidth={2.5} />
           </div>
           <div>
-            <div className="font-display text-base font-bold tracking-tight">SmartCam</div>
-            <div className="text-[10px] uppercase tracking-[0.2em] text-gray-500 font-mono">SaaS</div>
+            <div className="font-display text-base font-bold tracking-tighter">SmartCam</div>
+            <div className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-mono">SaaS · 2026</div>
           </div>
         </div>
       </div>
 
-      <nav className="flex-1 px-3 py-5 space-y-1 overflow-y-auto">
+      <nav className="flex-1 px-3 py-5 space-y-0.5 overflow-y-auto">
         {nav.map((item) => (
           <NavLink
             key={item.to}
@@ -49,21 +49,21 @@ export default function Sidebar({ onNavigate }) {
             onClick={onNavigate}
             data-testid={item.testid}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+              `flex items-center gap-3 px-3 py-2.5 text-sm transition-colors ${
                 isActive
-                  ? "bg-blue-500/10 text-blue-400 border-l-2 border-blue-500"
-                  : "text-gray-400 hover:text-white hover:bg-white/5 border-l-2 border-transparent"
+                  ? "bg-[#C8FF00] text-black font-semibold"
+                  : "text-gray-400 hover:text-white hover:bg-white/[0.04]"
               }`
             }
           >
-            <item.icon className="w-4 h-4" />
+            <item.icon className="w-4 h-4" strokeWidth={2} />
             <span className="font-medium">{item.label}</span>
           </NavLink>
         ))}
 
         {user?.role === "super_admin" && (
           <>
-            <div className="pt-5 pb-2 px-3 text-[10px] uppercase tracking-[0.2em] text-gray-600 font-mono">
+            <div className="pt-6 pb-2 px-3 text-[10px] uppercase tracking-[0.25em] text-gray-600 font-mono">
               Plataforma
             </div>
             <NavLink
@@ -71,14 +71,14 @@ export default function Sidebar({ onNavigate }) {
               onClick={onNavigate}
               data-testid="nav-admin"
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                `flex items-center gap-3 px-3 py-2.5 text-sm transition-colors ${
                   isActive
-                    ? "bg-blue-500/10 text-blue-400 border-l-2 border-blue-500"
-                    : "text-gray-400 hover:text-white hover:bg-white/5 border-l-2 border-transparent"
+                    ? "bg-[#C8FF00] text-black font-semibold"
+                    : "text-gray-400 hover:text-white hover:bg-white/[0.04]"
                 }`
               }
             >
-              <Shield className="w-4 h-4" />
+              <Shield className="w-4 h-4" strokeWidth={2} />
               <span className="font-medium">Super Admin</span>
             </NavLink>
           </>
@@ -86,8 +86,8 @@ export default function Sidebar({ onNavigate }) {
       </nav>
 
       <div className="px-3 py-4 border-t border-white/10">
-        <div className="flex items-center gap-3 px-2 py-2 rounded-lg">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-xs font-bold uppercase">
+        <div className="flex items-center gap-3 px-2 py-2">
+          <div className="w-8 h-8 bg-[#C8FF00] flex items-center justify-center text-xs font-bold uppercase text-black">
             {user?.name?.[0] || "U"}
           </div>
           <div className="flex-1 min-w-0">
@@ -97,7 +97,7 @@ export default function Sidebar({ onNavigate }) {
           <button
             data-testid="sidebar-logout-button"
             onClick={onLogout}
-            className="p-2 rounded-md text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
+            className="p-2 text-gray-400 hover:text-[#C8FF00] hover:bg-white/5 transition-colors"
             title="Cerrar sesión"
           >
             <LogOut className="w-4 h-4" />

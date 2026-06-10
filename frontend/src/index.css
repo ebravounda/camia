@@ -1,102 +1,78 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 html, body, #root {
-    background-color: #090A0F;
-    color: #F9FAFB;
+    background-color: #0A0A0A;
+    color: #FAFAF7;
 }
 
 body {
     margin: 0;
-    font-family: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: 'Inter Tight', -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    letter-spacing: -0.005em;
 }
 
 h1, h2, h3, h4, h5, h6, .font-display {
-    font-family: 'Outfit', sans-serif;
-    letter-spacing: -0.01em;
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-variation-settings: "opsz" 48;
+    letter-spacing: -0.025em;
+    line-height: 1.05;
 }
 
-code, .font-mono {
-    font-family: 'JetBrains Mono', monospace;
-}
+code, .font-mono { font-family: 'JetBrains Mono', monospace; }
 
-/* Custom selection */
-::selection {
-    background: rgba(59, 130, 246, 0.35);
-    color: #fff;
-}
+::selection { background: #C8FF00; color: #0A0A0A; }
 
-/* Custom scrollbar */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: #0E1017; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 8px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.18); }
+::-webkit-scrollbar-track { background: #0A0A0A; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); }
+::-webkit-scrollbar-thumb:hover { background: #C8FF00; }
 
-/* Grain overlay utility */
 .bg-grain {
     background-image: radial-gradient(rgba(255,255,255,0.025) 1px, transparent 1px);
     background-size: 3px 3px;
 }
 
-/* Pulse dot glow */
 .live-dot {
-    box-shadow: 0 0 8px rgba(239, 68, 68, 0.85);
+    box-shadow: 0 0 10px #C8FF00;
+}
+
+/* Brutalist hover lift */
+.brut-hover {
+    transition: transform 120ms ease, box-shadow 120ms ease;
+}
+.brut-hover:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 6px 6px 0 0 #C8FF00;
 }
 
 @layer base {
-    :root {
-        /* Force dark by default */
-        --background: 222 28% 5%;
-        --foreground: 210 20% 98%;
-        --card: 226 22% 9%;
-        --card-foreground: 210 20% 98%;
-        --popover: 226 22% 9%;
-        --popover-foreground: 210 20% 98%;
-        --primary: 217 91% 60%;
-        --primary-foreground: 0 0% 100%;
-        --secondary: 220 14% 14%;
-        --secondary-foreground: 210 20% 98%;
-        --muted: 220 14% 14%;
-        --muted-foreground: 220 9% 60%;
-        --accent: 220 14% 14%;
-        --accent-foreground: 210 20% 98%;
-        --destructive: 0 72% 51%;
-        --destructive-foreground: 210 20% 98%;
-        --border: 220 14% 18%;
-        --input: 220 14% 18%;
-        --ring: 217 91% 60%;
-        --chart-1: 217 91% 60%;
-        --chart-2: 160 60% 45%;
-        --chart-3: 30 80% 55%;
-        --chart-4: 280 65% 60%;
-        --chart-5: 340 75% 55%;
-        --radius: 0.6rem;
-    }
-    .dark { /* same as root, app is dark-only */
-        --background: 222 28% 5%;
-        --foreground: 210 20% 98%;
-        --card: 226 22% 9%;
-        --card-foreground: 210 20% 98%;
-        --popover: 226 22% 9%;
-        --popover-foreground: 210 20% 98%;
-        --primary: 217 91% 60%;
-        --primary-foreground: 0 0% 100%;
-        --secondary: 220 14% 14%;
-        --secondary-foreground: 210 20% 98%;
-        --muted: 220 14% 14%;
-        --muted-foreground: 220 9% 60%;
-        --accent: 220 14% 14%;
-        --accent-foreground: 210 20% 98%;
-        --destructive: 0 72% 51%;
-        --destructive-foreground: 210 20% 98%;
-        --border: 220 14% 18%;
-        --input: 220 14% 18%;
-        --ring: 217 91% 60%;
+    :root, .dark {
+        --background: 0 0% 4%;
+        --foreground: 60 5% 96%;
+        --card: 0 0% 7%;
+        --card-foreground: 60 5% 96%;
+        --popover: 0 0% 7%;
+        --popover-foreground: 60 5% 96%;
+        --primary: 73 100% 50%;        /* electric lime #C8FF00 */
+        --primary-foreground: 0 0% 4%;
+        --secondary: 0 0% 12%;
+        --secondary-foreground: 60 5% 96%;
+        --muted: 0 0% 12%;
+        --muted-foreground: 0 0% 60%;
+        --accent: 73 100% 50%;
+        --accent-foreground: 0 0% 4%;
+        --destructive: 0 84% 60%;
+        --destructive-foreground: 60 5% 96%;
+        --border: 0 0% 16%;
+        --input: 0 0% 16%;
+        --ring: 73 100% 50%;
+        --radius: 0.25rem;       /* sharper corners */
     }
 }
 

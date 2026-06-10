@@ -6,24 +6,14 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Cctv, Cpu, AlertTriangle, ShieldAlert, Radio, ArrowRight, Plus } from "lucide-react";
 
-const StatCard = ({ icon: Icon, label, value, accent = "blue", testid }) => {
-  const accents = {
-    blue: "text-blue-400 bg-blue-500/10 border-blue-500/20",
-    amber: "text-amber-400 bg-amber-500/10 border-amber-500/20",
-    red: "text-red-400 bg-red-500/10 border-red-500/20",
-    green: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
-  };
+const StatCard = ({ icon: Icon, label, value, accent = "lime", testid }) => {
   return (
-    <div data-testid={testid} className="p-5 rounded-xl bg-[#12141D] border border-white/10 hover:border-white/20 transition-colors">
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="text-[10px] uppercase tracking-[0.2em] text-gray-500 font-mono">{label}</div>
-          <div className="font-display text-3xl font-semibold mt-2">{value}</div>
-        </div>
-        <div className={`w-9 h-9 rounded-lg border flex items-center justify-center ${accents[accent]}`}>
-          <Icon className="w-4 h-4" />
-        </div>
+    <div data-testid={testid} className="bg-[#0F0F0F] border border-white/10 p-5 sm:p-6 hover:border-[#C8FF00] transition-colors group">
+      <div className="flex items-start justify-between mb-4 sm:mb-6">
+        <div className="text-[10px] uppercase tracking-[0.25em] text-gray-500 font-mono">{label}</div>
+        <Icon className="w-4 h-4 text-gray-600 group-hover:text-[#C8FF00] transition-colors" strokeWidth={2} />
       </div>
+      <div className="font-display text-5xl sm:text-6xl font-bold tracking-tighter">{value}</div>
     </div>
   );
 };
@@ -100,7 +90,7 @@ export default function Dashboard() {
       subtitle="Centro de control · monitoreo en tiempo real"
       action={
         <Link to="/devices" data-testid="dashboard-add-device-cta">
-          <Button className="bg-blue-600 hover:bg-blue-700 shadow-[0_0_14px_rgba(37,99,235,0.35)]">
+          <Button className="bg-[#C8FF00] hover:bg-[#B8EF00] text-black font-semibold rounded-none border border-[#C8FF00]">
             <Plus className="w-4 h-4 mr-1.5" /> Vincular Raspberry
           </Button>
         </Link>
