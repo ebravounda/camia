@@ -32,9 +32,9 @@ AI_MAX_WIDTH = int(os.environ.get("SMARTCAM_AI_MAX_WIDTH", "480"))
 
 # Live streaming defaults. STREAM_MAX_WIDTH=0 means use the camera's full
 # capture resolution (recommended now that HD/FHD is selectable per-camera).
-STREAM_FPS = float(os.environ.get("SMARTCAM_STREAM_FPS", "15"))
+STREAM_FPS = float(os.environ.get("SMARTCAM_STREAM_FPS", "20"))
 STREAM_MAX_WIDTH = int(os.environ.get("SMARTCAM_STREAM_MAX_WIDTH", "0"))
-STREAM_JPEG_QUALITY = int(os.environ.get("SMARTCAM_STREAM_QUALITY", "75"))
+STREAM_JPEG_QUALITY = int(os.environ.get("SMARTCAM_STREAM_QUALITY", "85"))
 STREAM_ENABLED = os.environ.get("SMARTCAM_STREAM", "1") not in ("0", "false", "no")
 HUD_ENABLED = os.environ.get("SMARTCAM_HUD", "1") not in ("0", "false", "no")
 
@@ -52,7 +52,7 @@ RESOLUTION_PRESETS = {
 
 # Camera capture defaults (override via env vars). MJPG is mandatory for HD/FHD
 # on Pi 3B+ to avoid the bandwidth wall of raw YUYV.
-CAM_FPS = int(os.environ.get("SMARTCAM_CAM_FPS", "15"))
+CAM_FPS = int(os.environ.get("SMARTCAM_CAM_FPS", "20"))
 CAM_FOURCC = os.environ.get("SMARTCAM_CAM_FOURCC", "MJPG")
 # Default resolution fallback when backend doesn't specify
 DEFAULT_RESOLUTION = os.environ.get("SMARTCAM_DEFAULT_RES", "HD")
@@ -385,6 +385,9 @@ def _worker(api_url: str, api_key: str, cam: Dict[str, Any], stop_event: threadi
     last_ai_at = 0.0
     last_ai_detections = []
     last_ai_frame_size = None
+    # AI runs in a background thread; these are shared state
+    _ai_state = {"detections": [], "frame_size": None}
+    _ai_inflight = [False]  # list-as-cell so closure can mutate
     last_faces = []
     last_motion_rects = []
     stream_interval = 1.0 / max(1.0, STREAM_FPS)
@@ -505,23 +508,42 @@ def _worker(api_url: str, api_key: str, cam: Dict[str, Any], stop_event: threadi
                     except Exception as e:
                         print(f"[agent][cam:{name}] suspicious event error: {e}", file=sys.stderr)
 
-                # Backend AI analysis (YOLO on server) - throttled
-                if AI_ENABLED and (time.time() - last_ai_at) >= AI_INTERVAL:
+                # Backend AI analysis (YOLO on server) - throttled, NON-BLOCKING
+                # Runs in a background daemon thread so the stream loop never
+                # waits on the HTTP request (this was the main source of stutter
+                # every AI_INTERVAL seconds on the previous version).
+                if AI_ENABLED and (time.time() - last_ai_at) >= AI_INTERVAL and not _ai_inflight[0]:
                     last_ai_at = time.time()
                     ai_jpeg = _encode_ai_jpeg(frame)
                     if ai_jpeg:
-                        try:
-                            last_ai_detections = client.analyze_frame(api_url, api_key, cam_id, ai_jpeg)
-                            # Track the size we sent so we can scale boxes back
-                            h_orig, w_orig = frame.shape[:2]
-                            scale = AI_MAX_WIDTH / float(w_orig) if w_orig > AI_MAX_WIDTH else 1.0
-                            last_ai_frame_size = (int(w_orig * scale), int(h_orig * scale))
-                            if last_ai_detections:
-                                labels = ", ".join(sorted({d.get("label_es", d["label"]) for d in last_ai_detections}))
-                                print(f"[agent][cam:{name}] AI detected: {labels}")
-                        except Exception as e:
-                            if int(time.time()) % 30 == 0:
-                                print(f"[agent][cam:{name}] AI analyze error: {e}", file=sys.stderr)
+                        h_orig, w_orig = frame.shape[:2]
+                        scale = AI_MAX_WIDTH / float(w_orig) if w_orig > AI_MAX_WIDTH else 1.0
+                        ai_frame_size_local = (int(w_orig * scale), int(h_orig * scale))
+
+                        def _ai_worker(jpeg_payload: bytes, frame_size_xy):
+                            try:
+                                dets = client.analyze_frame(api_url, api_key, cam_id, jpeg_payload)
+                                _ai_state["detections"] = dets
+                                _ai_state["frame_size"] = frame_size_xy
+                                if dets:
+                                    labels = ", ".join(sorted({d.get("label_es", d["label"]) for d in dets}))
+                                    print(f"[agent][cam:{name}] AI detected: {labels}")
+                            except Exception as e:
+                                if int(time.time()) % 30 == 0:
+                                    print(f"[agent][cam:{name}] AI analyze error: {e}", file=sys.stderr)
+                            finally:
+                                _ai_inflight[0] = False
+
+                        _ai_inflight[0] = True
+                        threading.Thread(
+                            target=_ai_worker,
+                            args=(ai_jpeg, ai_frame_size_local),
+                            name=f"ai-{cam_id[:8]}",
+                            daemon=True,
+                        ).start()
+
+                last_ai_detections = _ai_state["detections"]
+                last_ai_frame_size = _ai_state["frame_size"]
 
                 # Build the display frame with overlays
                 display_frame = frame

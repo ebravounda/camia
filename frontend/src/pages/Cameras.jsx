@@ -10,9 +10,21 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Cctv, Plus, Trash2, Play, Volume2, VolumeX } from "lucide-react";
+import { Cctv, Plus, Trash2, Play, Volume2, VolumeX, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
+
+const REQUIRED_AGENT_VERSION = "0.4.0";
+
+const cmpVersion = (a, b) => {
+  const pa = (a || "0").split(".").map(Number);
+  const pb = (b || "0").split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    const x = pa[i] || 0, y = pb[i] || 0;
+    if (x !== y) return x - y;
+  }
+  return 0;
+};
 
 const RES_OPTIONS = [
   { value: "SD",  label: "SD · 640×480",   hint: "Bajo consumo" },
@@ -147,6 +159,37 @@ export default function Cameras() {
           <p className="text-sm text-gray-400 mt-2">Añade hasta 4 cámaras USB por Raspberry.</p>
         </div>
       ) : (
+        <>
+          {(() => {
+            const outdated = devices.filter(
+              (d) => d.is_paired && cmpVersion(d.agent_version, REQUIRED_AGENT_VERSION) < 0
+            );
+            if (outdated.length === 0) return null;
+            return (
+              <div
+                data-testid="agent-update-banner"
+                className="bg-amber-500/10 border border-amber-500/30 p-4 mb-4 flex items-start gap-3"
+              >
+                <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <div className="font-display font-semibold text-amber-300">
+                    Actualiza el agente para HD/FHD + audio
+                  </div>
+                  <div className="text-sm text-amber-200/80 mt-1">
+                    {outdated.length === 1
+                      ? `Tu Raspberry «${outdated[0].name}» tiene la versión ${outdated[0].agent_version || "antigua"} del agente.`
+                      : `${outdated.length} Raspberrys tienen versiones antiguas del agente.`}
+                    {" "}Hasta que la actualices, el stream seguirá saliendo en 640×480 y sin audio.
+                  </div>
+                  <div className="mt-2 text-xs font-mono bg-black/40 border border-white/10 p-2 text-amber-100/90">
+                    <div>1. Pulsa <strong>"Save to GitHub"</strong> arriba en Emergent.</div>
+                    <div>2. En el Pi: <code className="text-[#C8FF00]">cd ~/smartcam-agent && git pull && sudo systemctl restart smartcam-agent</code></div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {cameras.map((c) => {
             const device = devices.find((d) => d.id === c.device_id);
@@ -233,6 +276,7 @@ export default function Cameras() {
             );
           })}
         </div>
+        </>
       )}
     </AppShell>
   );

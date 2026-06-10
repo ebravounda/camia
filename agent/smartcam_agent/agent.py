@@ -30,7 +30,7 @@ from . import heartbeat as hb
 from . import camera_loop
 from . import audio_loop
 
-AGENT_VERSION = "0.3.0"
+AGENT_VERSION = "0.4.0"
 DEFAULT_CONFIG_PATH = Path(os.environ.get("SMARTCAM_CONFIG", "/etc/smartcam/config.json"))
 
 
